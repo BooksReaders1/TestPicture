@@ -117,7 +117,11 @@
             var ctx = canvas.getContext("2d");
             var naturalWidth = imgElement.naturalWidth, naturalHeight = imgElement.naturalHeight;
             canvas.width = naturalWidth; canvas.height = naturalHeight;
-            var container = document.getElementById(imgElement.id).parentNode;
+            var container = imgElement.parentNode;
+            if (!container) {
+                console.error(`无法找到图片容器 (页 ${index})`);
+                return;
+            }
             var pageId = container.id.split(".")[0];
             var sliceCount = get_num(parseInt(mangaId), pageId);
             var sliceHeight = Math.floor(naturalHeight / sliceCount);
@@ -137,8 +141,12 @@
             container.id = `page-${index}`; container.className = "manga-page-wrapper";
             const img = document.createElement("img");
             img.id = `img-${index}`; img.className = "manga-page source-image"; img.alt = `第 ${index} 页`;
+            img.crossOrigin = "anonymous";
             const indexStr = String(index).padStart(5, '0');
-            img.src = `https://cdn-msp.jm18c-uoe.cc/media/photos/${mangaId}/${indexStr}.webp`;
+            // Use CORS proxy for images to avoid CORS issues
+            const corsProxy = 'https://api.allorigins.win/raw?url=';
+            const imgUrl = `https://cdn-msp.jm18c-uoe.cc/media/photos/${mangaId}/${indexStr}.webp`;
+            img.src = corsProxy + encodeURIComponent(imgUrl);
             container.appendChild(img);
             return container;
         }
@@ -237,8 +245,12 @@
             const urlParams = new URLSearchParams(window.location.search);
             mangaId = urlParams.get('id') || urlParams.get('ID') || 'default';
             
+            // Use a CORS proxy to fetch album page
+            const corsProxy = 'https://api.allorigins.win/raw?url=';
+            const albumUrl = `https://jm18c-uoe.cc/album/${mangaId}/`;
+            
             // Fetch album page to get title and total pages
-            fetch(`https://jm18c-uoe.cc/album/${mangaId}/`)
+            fetch(corsProxy + encodeURIComponent(albumUrl))
                 .then(response => response.text())
                 .then(html => {
                     // Extract title from <title> tag

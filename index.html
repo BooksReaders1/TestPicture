@@ -10,7 +10,7 @@
         .header { position: fixed; top: 0; left: 0; right: 0; height: 60px; background-color: #333; color: #fff; display: flex; align-items: center; justify-content: center; padding: 0 20px; z-index: 1000; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
         .header-title { font-size: 16px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60%; text-align: center; }
         .header-page { font-size: 14px; color: #aaa; margin-left: 15px; white-space: nowrap; }
-        .manga-container { width: 100%; max-width: 100%; margin: 0 auto; }
+        .manga-container { width: 100%; max-width: 1000px; margin: 0 auto; }
         .manga-page-wrapper { width: 100%; margin-bottom: 5px; background-color: #e0e0e0; min-height: 200px; }
         .manga-page-wrapper.loaded { background-color: transparent; }
         .loading { display: flex; align-items: center; justify-content: center; min-height: 200px; color: #999; font-size: 14px; }
@@ -18,9 +18,9 @@
         @keyframes spin { to { transform: rotate(360deg); } }
         .error { display: flex; align-items: center; justify-content: center; min-height: 200px; color: #e74c3c; font-size: 14px; cursor: pointer; }
         .error::before { content: "⚠"; margin-right: 8px; font-size: 18px; }
-        canvas.manga-canvas { width: 100%; height: auto; display: block; }
+        canvas.manga-canvas { max-width: 100%; height: auto; display: block; object-fit: contain; }
         .source-image { display: none; }
-        @media (max-width: 768px) { .header { height: 50px; padding: 0 15px; } body { padding-top: 50px; } .header-title { font-size: 14px; } .header-page { font-size: 12px; } }
+        @media (max-width: 768px) { .header { height: 50px; padding: 0 15px; } body { padding-top: 50px; } .header-title { font-size: 14px; } .header-page { font-size: 12px; } .manga-container { max-width: 100%; } }
     </style>
 </head>
 <body>
@@ -97,7 +97,7 @@
             return (WordToHex(a) + WordToHex(b) + WordToHex(c) + WordToHex(d)).toLowerCase();
         }
         let mangaId = '', totalPages = 0, loadedPages = 0;
-        const MAX_PAGES = 100, CONCURRENT_LOAD = 5;
+        const MAX_PAGES = 100, CONCURRENT_LOAD = 8;
         function get_num(e, t) {
             var a = 10;
             if (e >= 268850) {
@@ -148,8 +148,13 @@
         function loadPage(index, retryCount = 0) {
             const container = document.getElementById(`page-${index}`);
             if (!container) return;
-            showLoading(container);
+            // 检查页面是否已加载或加载中，避免重复加载
+            if (container.classList.contains('loaded') || container.querySelector('img').getAttribute('data-loading') === 'true') {
+                return;
+            }
             const img = container.querySelector('img');
+            img.setAttribute('data-loading', 'true');
+            showLoading(container);
             const maxRetries = 3;
             img.onload = function() {
                 try {
@@ -188,6 +193,21 @@
             });
             return pages;
         }
+        function loadPagesAroundCurrentPage() {
+            const visiblePages = getVisiblePages();
+            if (visiblePages.length === 0) return;
+            const currentPage = Math.min(...visiblePages);
+            // 检查当前页下面 8 张图片的加载状态
+            for (let i = currentPage; i < currentPage + 8 && i <= totalPages; i++) {
+                const container = document.getElementById(`page-${i}`);
+                if (!container) continue;
+                const img = container.querySelector('img');
+                // 如果未加载且未在加载中，则触发加载
+                if (!container.classList.contains('loaded') && img.getAttribute('data-loading') !== 'true') {
+                    loadPage(i);
+                }
+            }
+        }
         function loadPagesConcurrently(startIndex, count) {
             const endIndex = Math.min(startIndex + count, totalPages);
             const queue = [];
@@ -218,18 +238,14 @@
             document.getElementById('pageInfo').textContent = `1 / ${totalPages}`;
             const container = document.getElementById('mangaContainer');
             for (let i = 1; i <= totalPages; i++) container.appendChild(createPageElement(i));
-            loadPagesConcurrently(1, Math.min(10, totalPages));
+            loadPagesConcurrently(1, Math.min(8, totalPages));
             let scrollTimeout;
             window.addEventListener('scroll', () => {
                 updatePageInfo();
                 clearTimeout(scrollTimeout);
                 scrollTimeout = setTimeout(() => {
-                    const scrollTop = window.scrollY, windowHeight = window.innerHeight, documentHeight = document.documentElement.scrollHeight;
-                    const scrollPercent = (scrollTop + windowHeight) / documentHeight;
-                    const targetPage = Math.ceil(scrollPercent * totalPages);
-                    const nextToLoad = loadedPages + 1;
-                    if (nextToLoad <= targetPage + 5 && nextToLoad <= totalPages)
-                        loadPagesConcurrently(nextToLoad, Math.min(10, totalPages - nextToLoad + 1));
+                    // 使用新的预加载机制：检查当前页及下面 7 页的加载状态
+                    loadPagesAroundCurrentPage();
                 }, 100);
             });
         }

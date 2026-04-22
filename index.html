@@ -135,11 +135,32 @@
             var sliceCount = get_num(parseInt(mangaId), pageId);
             var sliceHeight = Math.floor(naturalHeight / sliceCount);
             var remainder = naturalHeight % sliceCount;
-            var destY = 0;
+            
+            // 解混淆原理：
+            // 服务器将图片垂直切割成 sliceCount 片，然后倒序排列
+            // 例如：原图 [A][B][C][D][E] -> 混淆后 [E][D][C][B][A]
+            // 我们需要从混淆图中按顺序读取 [E][D][C][B][A]，然后正序绘制回 [A][B][C][D][E]
+            // 余数 remainder 在原图的最后一片（即混淆后的第一片）
+            
+            var destY = 0; // 目标位置的 Y 坐标（从顶部开始）
             for (var m = 0; m < sliceCount; m++) {
-                var currentSliceHeight = sliceHeight, srcY;
-                if (m === 0) { currentSliceHeight += remainder; srcY = naturalHeight - currentSliceHeight; }
-                else { srcY = naturalHeight - sliceHeight * (m + 1) - remainder; }
+                // 源图切片索引：从最后一片开始（倒序读取）
+                var srcSliceIndex = sliceCount - 1 - m;
+                
+                // 计算源图切片的 Y 坐标和高度
+                var srcY, currentSliceHeight;
+                
+                if (srcSliceIndex === sliceCount - 1) {
+                    // 原图的最后一片（包含余数），在混淆图中是第一片（m === 0）
+                    currentSliceHeight = sliceHeight + remainder;
+                    srcY = naturalHeight - currentSliceHeight;
+                } else {
+                    // 其他切片，高度为 sliceHeight
+                    currentSliceHeight = sliceHeight;
+                    srcY = srcSliceIndex * sliceHeight;
+                }
+                
+                // 将源图切片绘制到目标位置
                 ctx.drawImage(imgElement, 0, srcY, naturalWidth, currentSliceHeight, 0, destY, naturalWidth, currentSliceHeight);
                 destY += currentSliceHeight;
             }

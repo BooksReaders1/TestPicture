@@ -98,6 +98,7 @@
         }
         let mangaId = '', totalPages = 0, loadedPages = 0;
         const MAX_PAGES = 100, CONCURRENT_LOAD = 8;
+        let hasShownEndMessage = false;
         function get_num(e, t) {
             var a = 10;
             if (e >= 268850) {
@@ -136,7 +137,8 @@
             container.id = `page-${index}`; container.className = "manga-page-wrapper";
             const img = document.createElement("img");
             img.id = `img-${index}`; img.className = "manga-page source-image"; img.alt = `第 ${index} 页`;
-            img.src = `https://cdn-msp.jm18c-uoi.net/media/albums/${mangaId}-${index}.jpg`;
+            const indexStr = String(index).padStart(5, '0');
+            img.src = `https://cdn-msp.jm18c-uoe.cc/media/photos/${mangaId}/${indexStr}.webp`;
             container.appendChild(img);
             return container;
         }
@@ -234,18 +236,71 @@
         function init() {
             const urlParams = new URLSearchParams(window.location.search);
             mangaId = urlParams.get('id') || urlParams.get('ID') || 'default';
-            document.getElementById('mangaTitle').textContent = `漫画 ID: ${mangaId}`;
-            totalPages = MAX_PAGES;
-            document.getElementById('pageInfo').textContent = `1 / ${totalPages}`;
-            const container = document.getElementById('mangaContainer');
-            for (let i = 1; i <= totalPages; i++) container.appendChild(createPageElement(i));
-            loadPagesConcurrently(1, Math.min(8, totalPages));
+            
+            // Fetch album page to get title and total pages
+            fetch(`https://jm18c-uoe.cc/album/${mangaId}/`)
+                .then(response => response.text())
+                .then(html => {
+                    // Extract title from <title> tag
+                    const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
+                    if (titleMatch && titleMatch[1]) {
+                        document.getElementById('mangaTitle').textContent = titleMatch[1].trim();
+                    } else {
+                        document.getElementById('mangaTitle').textContent = `漫画 ID: ${mangaId}`;
+                    }
+                    
+                    // Extract total pages from <span class="pagecount">页数:31</span>
+                    const pageCountMatch = html.match(/页数:(\d+)/i);
+                    if (pageCountMatch && pageCountMatch[1]) {
+                        totalPages = parseInt(pageCountMatch[1], 10);
+                    } else {
+                        totalPages = MAX_PAGES;
+                    }
+                    
+                    document.getElementById('pageInfo').textContent = `1 / ${totalPages}`;
+                    
+                    // Create page elements
+                    const container = document.getElementById('mangaContainer');
+                    for (let i = 1; i <= totalPages; i++) {
+                        container.appendChild(createPageElement(i));
+                    }
+                    
+                    loadPagesConcurrently(1, Math.min(8, totalPages));
+                })
+                .catch(error => {
+                    console.error('Failed to fetch album info:', error);
+                    document.getElementById('mangaTitle').textContent = `漫画 ID: ${mangaId}`;
+                    totalPages = MAX_PAGES;
+                    document.getElementById('pageInfo').textContent = `1 / ${totalPages}`;
+                    const container = document.getElementById('mangaContainer');
+                    for (let i = 1; i <= totalPages; i++) {
+                        container.appendChild(createPageElement(i));
+                    }
+                    loadPagesConcurrently(1, Math.min(8, totalPages));
+                });
+            
             let scrollTimeout;
             window.addEventListener('scroll', () => {
                 updatePageInfo();
+                
+                // Check if user has scrolled to the bottom
+                const scrollTop = window.scrollY || window.pageYOffset;
+                const windowHeight = window.innerHeight;
+                const documentHeight = document.documentElement.scrollHeight;
+                
+                if (scrollTop + windowHeight >= documentHeight - 10) {
+                    // User is at or near the bottom
+                    if (!hasShownEndMessage) {
+                        hasShownEndMessage = true;
+                        alert('已经到底了');
+                    }
+                } else {
+                    // Reset flag if user scrolls up
+                    hasShownEndMessage = false;
+                }
+                
                 clearTimeout(scrollTimeout);
                 scrollTimeout = setTimeout(() => {
-                    // 使用新的预加载机制：检查当前页及下面 7 页的加载状态
                     loadPagesAroundCurrentPage();
                 }, 100);
             });

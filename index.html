@@ -208,6 +208,7 @@
             
             return true;
         }
+        
         function createPageElement(index) {
             const container = document.createElement("div");
             container.id = `page-${index}`; container.className = "manga-page-wrapper";
@@ -263,9 +264,16 @@
             showLoading(container);
             const maxRetries = 3;
             
-            // 构建图片 URL
+            // 构建图片 URL（去除空格）
             const indexStr = String(index).padStart(5, '0');
-            const imgUrl = `https://cdn-msp.jm18c-uoe.cc/media/photos/${mangaId}/${indexStr}.webp`;
+            const imgUrl = `https://cdn-msp.jm18c-uoe.cc/media/photos/${mangaId}/${indexStr}.webp`.trim();
+            
+            // 确保图片元素已挂载到 DOM
+            if (!img.isConnected) {
+                console.error(`页 ${index} 的图片未挂载到 DOM，重新添加到容器`);
+                container.innerHTML = '';
+                container.appendChild(img);
+            }
             
             // 先设置 onload/onerror 再设置 src，确保不会错过事件
             img.onload = function() {
@@ -292,15 +300,15 @@
                     else showError(container, () => loadPage(index, 0));
                 }
             };
-            img.onerror = function() {
-                console.warn(`加载图片失败 (页 ${index}), 重试次数：${retryCount}`);
+            img.onerror = function(e) {
+                console.warn(`加载图片失败 (页 ${index}), 重试次数：${retryCount}, 错误事件:`, e);
                 // 确保移除 loading 标记
                 img.removeAttribute('data-loading');
                 if (retryCount < maxRetries) setTimeout(() => loadPage(index, retryCount + 1), 1000 * (retryCount + 1));
                 else showError(container, () => loadPage(index, 0));
             };
             
-            // 设置 src 开始加载
+            // 设置 src 开始加载（确保 URL 没有空格）
             img.src = imgUrl;
         }
         function updatePageInfo() {

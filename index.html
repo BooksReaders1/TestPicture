@@ -143,10 +143,9 @@
             img.id = `img-${index}`; img.className = "manga-page source-image"; img.alt = `第 ${index} 页`;
             img.crossOrigin = "anonymous";
             const indexStr = String(index).padStart(5, '0');
-            // Use CORS proxy for images to avoid CORS issues
-            const corsProxy = 'https://api.allorigins.win/raw?url=';
+            // Direct image URL without CORS proxy
             const imgUrl = `https://cdn-msp.jm18c-uoe.cc/media/photos/${mangaId}/${indexStr}.webp`;
-            img.src = corsProxy + encodeURIComponent(imgUrl);
+            img.src = imgUrl;
             container.appendChild(img);
             return container;
         }
@@ -245,14 +244,15 @@
             const urlParams = new URLSearchParams(window.location.search);
             mangaId = urlParams.get('id') || urlParams.get('ID') || 'default';
             
-            // Use a CORS proxy to fetch album page
-            const corsProxy = 'https://api.allorigins.win/raw?url=';
+            // Use a CORS proxy to fetch album page for title and total pages
+            const corsProxy = 'https://api.allorigins.win/get?url=';
             const albumUrl = `https://jm18c-uoe.cc/album/${mangaId}/`;
             
             // Fetch album page to get title and total pages
             fetch(corsProxy + encodeURIComponent(albumUrl))
-                .then(response => response.text())
-                .then(html => {
+                .then(response => response.json())
+                .then(data => {
+                    const html = data.contents;
                     // Extract title from <title> tag
                     const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
                     if (titleMatch && titleMatch[1]) {

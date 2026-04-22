@@ -149,10 +149,11 @@
             const container = document.getElementById(`page-${index}`);
             if (!container) return;
             // 检查页面是否已加载或加载中，避免重复加载
-            if (container.classList.contains('loaded') || container.querySelector('img').getAttribute('data-loading') === 'true') {
+            const img = container.querySelector('img');
+            if (!img) return;
+            if (container.classList.contains('loaded') || img.getAttribute('data-loading') === 'true') {
                 return;
             }
-            const img = container.querySelector('img');
             img.setAttribute('data-loading', 'true');
             showLoading(container);
             const maxRetries = 3;

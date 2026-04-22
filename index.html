@@ -111,6 +111,11 @@
             return a;
         }
         function processImage(imgElement, index) {
+            // 防御性检查：确保图片元素已挂载到 DOM
+            if (!imgElement || !imgElement.isConnected || !imgElement.parentNode) {
+                console.debug(`页 ${index} 的图片未挂载到 DOM 或已被移除，跳过处理。`);
+                return;
+            }
             var canvas = document.createElement("canvas");
             canvas.className = "manga-canvas";
             imgElement.after(canvas);
@@ -118,8 +123,9 @@
             var naturalWidth = imgElement.naturalWidth, naturalHeight = imgElement.naturalHeight;
             canvas.width = naturalWidth; canvas.height = naturalHeight;
             var container = imgElement.parentNode;
+            // 二次检查：防止在 above 操作过程中元素被移除
             if (!container) {
-                console.error(`无法找到图片容器 (页 ${index})`);
+                console.debug(`页 ${index} 的图片在处理过程中被移除，跳过处理。`);
                 return;
             }
             var pageId = container.id.split(".")[0];

@@ -53,7 +53,7 @@
                 if (lMessageLength === 0) {
                     return [0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
                 }
-                var lNumberOfWords = (((lMessageLength + 8) - ((lMessageLength + 8) % 64)) / 64 + 1) * 16;
+                var lNumberOfWords = ((((lMessageLength + 8) >> 6) + 1) << 4);
                 var lWordArray = new Array(lNumberOfWords);
                 for (var i = 0; i < lNumberOfWords; i++) {
                     lWordArray[i] = 0;

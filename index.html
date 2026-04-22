@@ -50,8 +50,14 @@
             function II(a,b,c,d,x,s,ac) { a = AddUnsigned(a, AddUnsigned(AddUnsigned(I(b,c,d), x), ac)); return AddUnsigned(RotateLeft(a, s), b); }
             function ConvertToWordArray(string) {
                 var lMessageLength = string.length;
+                if (lMessageLength === 0) {
+                    return [0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+                }
                 var lNumberOfWords = (((lMessageLength + 8) - ((lMessageLength + 8) % 64)) / 64 + 1) * 16;
-                var lWordArray = Array(lNumberOfWords - 1);
+                var lWordArray = new Array(lNumberOfWords);
+                for (var i = 0; i < lNumberOfWords; i++) {
+                    lWordArray[i] = 0;
+                }
                 var lBytePosition = 0, lByteCount = 0;
                 while (lByteCount < lMessageLength) {
                     var lWordCount = (lByteCount - (lByteCount % 4)) / 4;

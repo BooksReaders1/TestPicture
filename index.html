@@ -117,20 +117,31 @@
             // 防御性检查：确保图片元素已挂载到 DOM
             if (!imgElement || !imgElement.isConnected || !imgElement.parentNode) {
                 console.debug(`页 ${index} 的图片未挂载到 DOM 或已被移除，跳过处理。`);
-                return;
+                return false;
             }
+            
             var canvas = document.createElement("canvas");
             canvas.className = "manga-canvas";
-            imgElement.after(canvas);
+            
             var ctx = canvas.getContext("2d");
             var naturalWidth = imgElement.naturalWidth, naturalHeight = imgElement.naturalHeight;
-            canvas.width = naturalWidth; canvas.height = naturalHeight;
+            
+            // 检查图片尺寸是否有效
+            if (!naturalWidth || !naturalHeight) {
+                console.error(`页 ${index} 的图片尺寸无效: ${naturalWidth}x${naturalHeight}`);
+                return false;
+            }
+            
+            canvas.width = naturalWidth;
+            canvas.height = naturalHeight;
             var container = imgElement.parentNode;
+            
             // 二次检查：防止在 above 操作过程中元素被移除
             if (!container) {
                 console.debug(`页 ${index} 的图片在处理过程中被移除，跳过处理。`);
-                return;
+                return false;
             }
+            
             var pageId = container.id.split(".")[0];
             var sliceCount = get_num(parseInt(mangaId), pageId);
             var sliceHeight = Math.floor(naturalHeight / sliceCount);
@@ -138,33 +149,63 @@
             
             // 解混淆原理：
             // 服务器将图片垂直切割成 sliceCount 片，然后倒序排列
-            // 例如：原图 [A][B][C][D][E] -> 混淆后 [E][D][C][B][A]
-            // 我们需要从混淆图中按顺序读取 [E][D][C][B][A]，然后正序绘制回 [A][B][C][D][E]
-            // 余数 remainder 在原图的最后一片（即混淆后的第一片）
+            // 例如原图有 5 片 [A(0)][B(1)][C(2)][D(3)][E(4)+remainder]
+            // 混淆后变成 [E(4)+remainder][D(3)][C(2)][B(1)][A(0)]
+            // 我们需要从混淆图中读取切片，然后正序绘制回 canvas
+            // 
+            // 混淆图的布局（从上到下）：
+            //   位置 0: 原图切片 (sliceCount-1) + remainder
+            //   位置 1: 原图切片 (sliceCount-2)
+            //   ...
+            //   位置 m: 原图切片 (sliceCount-1-m)
+            //
+            // 目标：恢复成原图顺序 [A(0)][B(1)][C(2)][D(3)][E(4)+remainder]
             
-            var destY = 0; // 目标位置的 Y 坐标（从顶部开始）
+            var destY = 0; // 目标位置的 Y 坐标（从顶部开始，按原图顺序）
             for (var m = 0; m < sliceCount; m++) {
-                // 源图切片索引：从最后一片开始（倒序读取）
-                var srcSliceIndex = sliceCount - 1 - m;
+                // 我们要绘制原图的第 m 片到 destY 位置
+                // 原图第 m 片在混淆图中的位置是 (sliceCount - 1 - m)
+                var origSliceIndex = m; // 原图片索引
+                var scrambledSliceIndex = sliceCount - 1 - m; // 在混淆图中的切片索引
                 
-                // 计算源图切片的 Y 坐标和高度
+                // 计算混淆图中该切片的 Y 坐标和高度
                 var srcY, currentSliceHeight;
                 
-                if (srcSliceIndex === sliceCount - 1) {
-                    // 原图的最后一片（包含余数），在混淆图中是第一片（m === 0）
+                // 首先计算混淆图中每个切片的位置
+                // 混淆图第 0 片（最上面）是原图最后一片，带 remainder
+                // 混淆图第 i 片的高度：如果 i===0 则是 sliceHeight+remainder，否则是 sliceHeight
+                if (scrambledSliceIndex === 0) {
+                    // 混淆图的第一片（包含原图最后一片的余数）
                     currentSliceHeight = sliceHeight + remainder;
-                    srcY = naturalHeight - currentSliceHeight;
+                    srcY = 0;
                 } else {
-                    // 其他切片，高度为 sliceHeight
+                    // 混淆图的其他片
                     currentSliceHeight = sliceHeight;
-                    srcY = srcSliceIndex * sliceHeight;
+                    // 累加前面所有切片的高度
+                    srcY = (sliceHeight + remainder) + (scrambledSliceIndex - 1) * sliceHeight;
+                }
+                
+                // 边界检查
+                if (srcY < 0) srcY = 0;
+                if (srcY + currentSliceHeight > naturalHeight) {
+                    currentSliceHeight = naturalHeight - srcY;
+                }
+                
+                if (currentSliceHeight <= 0) {
+                    console.warn(`页 ${index}: 切片 ${m} 高度为 0，跳过`);
+                    continue;
                 }
                 
                 // 将源图切片绘制到目标位置
                 ctx.drawImage(imgElement, 0, srcY, naturalWidth, currentSliceHeight, 0, destY, naturalWidth, currentSliceHeight);
                 destY += currentSliceHeight;
             }
+            
+            // 插入 canvas 到 img 之后
+            imgElement.after(canvas);
             imgElement.classList.add("source-image");
+            
+            return true;
         }
         function createPageElement(index) {
             const container = document.createElement("div");
@@ -184,8 +225,19 @@
             container.innerHTML = '<div class="loading">加载中</div>';
         }
         function showError(container, retryCallback) {
+            // 清除容器内的所有内容并显示错误
             container.innerHTML = '<div class="error">加载失败，点击重试</div>';
-            container.querySelector('.error').addEventListener('click', retryCallback);
+            const errorEl = container.querySelector('.error');
+            if (errorEl && retryCallback) {
+                errorEl.addEventListener('click', retryCallback);
+            }
+        }
+        function clearLoadingState(container) {
+            // 清除 loading 状态，保留内容
+            const loadingEl = container.querySelector('.loading');
+            if (loadingEl) {
+                loadingEl.remove();
+            }
         }
         function showToast(message, duration = 3000) {
             const toast = document.getElementById('toast');
@@ -217,20 +269,32 @@
             // 先设置 onload/onerror 再设置 src，确保不会错过事件
             img.onload = function() {
                 try {
-                    processImage(img, index);
-                    container.classList.add('loaded');
-                    loadedPages++;
-                    updatePageInfo();
+                    // 清除 loading 状态（此时 img 已加载完成，但 canvas 还未创建）
+                    clearLoadingState(container);
+                    
+                    var success = processImage(img, index);
+                    if (success) {
+                        container.classList.add('loaded');
+                        loadedPages++;
+                        updatePageInfo();
+                    } else {
+                        console.warn(`页 ${index}: 图片处理失败，将重试`);
+                        throw new Error('图片处理返回失败');
+                    }
                     // 图片加载完成后移除 loading 状态标记
                     img.removeAttribute('data-loading');
                 } catch (e) {
                     console.error(`处理图片失败 (页 ${index}):`, e);
+                    // 移除 loading 标记以便重试
+                    img.removeAttribute('data-loading');
                     if (retryCount < maxRetries) setTimeout(() => loadPage(index, retryCount + 1), 1000 * (retryCount + 1));
                     else showError(container, () => loadPage(index, 0));
                 }
             };
             img.onerror = function() {
                 console.warn(`加载图片失败 (页 ${index}), 重试次数：${retryCount}`);
+                // 确保移除 loading 标记
+                img.removeAttribute('data-loading');
                 if (retryCount < maxRetries) setTimeout(() => loadPage(index, retryCount + 1), 1000 * (retryCount + 1));
                 else showError(container, () => loadPage(index, 0));
             };

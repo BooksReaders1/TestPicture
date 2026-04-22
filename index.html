@@ -142,8 +142,9 @@
                 return false;
             }
             
-            var pageId = container.id.split(".")[0];
-            var sliceCount = get_num(parseInt(mangaId), pageId);
+            // 从容器 ID 中提取页码数字 (格式: page-{index})
+            var pageId = container.id.replace('page-', '');
+            var sliceCount = get_num(parseInt(mangaId), parseInt(pageId));
             var sliceHeight = Math.floor(naturalHeight / sliceCount);
             var remainder = naturalHeight % sliceCount;
             

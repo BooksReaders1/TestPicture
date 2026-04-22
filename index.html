@@ -244,52 +244,18 @@
             const urlParams = new URLSearchParams(window.location.search);
             mangaId = urlParams.get('id') || urlParams.get('ID') || 'default';
             
-            // Use a CORS proxy to fetch album page for title and total pages
-            const corsProxy = 'https://api.allorigins.win/get?url=';
-            const albumUrl = `https://jm18c-uoe.cc/album/${mangaId}/`;
+            // 降级方案：不获取作品名称和总页数，默认最大 100 页
+            document.getElementById('mangaTitle').textContent = `漫画 ID: ${mangaId}`;
+            totalPages = MAX_PAGES;
+            document.getElementById('pageInfo').textContent = `1 / ${totalPages}`;
             
-            // Fetch album page to get title and total pages
-            fetch(corsProxy + encodeURIComponent(albumUrl))
-                .then(response => response.json())
-                .then(data => {
-                    const html = data.contents;
-                    // Extract title from <title> tag
-                    const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
-                    if (titleMatch && titleMatch[1]) {
-                        document.getElementById('mangaTitle').textContent = titleMatch[1].trim();
-                    } else {
-                        document.getElementById('mangaTitle').textContent = `漫画 ID: ${mangaId}`;
-                    }
-                    
-                    // Extract total pages from <span class="pagecount">页数:31</span>
-                    const pageCountMatch = html.match(/页数:(\d+)/i);
-                    if (pageCountMatch && pageCountMatch[1]) {
-                        totalPages = parseInt(pageCountMatch[1], 10);
-                    } else {
-                        totalPages = MAX_PAGES;
-                    }
-                    
-                    document.getElementById('pageInfo').textContent = `1 / ${totalPages}`;
-                    
-                    // Create page elements
-                    const container = document.getElementById('mangaContainer');
-                    for (let i = 1; i <= totalPages; i++) {
-                        container.appendChild(createPageElement(i));
-                    }
-                    
-                    loadPagesConcurrently(1, Math.min(8, totalPages));
-                })
-                .catch(error => {
-                    console.error('Failed to fetch album info:', error);
-                    document.getElementById('mangaTitle').textContent = `漫画 ID: ${mangaId}`;
-                    totalPages = MAX_PAGES;
-                    document.getElementById('pageInfo').textContent = `1 / ${totalPages}`;
-                    const container = document.getElementById('mangaContainer');
-                    for (let i = 1; i <= totalPages; i++) {
-                        container.appendChild(createPageElement(i));
-                    }
-                    loadPagesConcurrently(1, Math.min(8, totalPages));
-                });
+            // 创建页面元素
+            const container = document.getElementById('mangaContainer');
+            for (let i = 1; i <= totalPages; i++) {
+                container.appendChild(createPageElement(i));
+            }
+            
+            loadPagesConcurrently(1, Math.min(8, totalPages));
             
             let scrollTimeout;
             window.addEventListener('scroll', () => {

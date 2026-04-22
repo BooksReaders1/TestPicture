@@ -110,12 +110,26 @@
         let hasShownEndMessage = false;
         function get_num(e, t) {
             var a = 10;
-            if (e >= 268850) {
-                var n = e + t;
-                n = md5(n).substr(-1);
-                n = n.charCodeAt();
+            var n = (e = atob(e)) + (t = atob(t));
+            n = md5(n).substr(-1).charCodeAt();
+            
+            if (parseInt(e) >= atob("MjY4ODUw") && parseInt(e) <= atob("NDIxOTI1")) {
                 n %= 10;
-                switch (n) { case 0: a=2; break; case 1: a=4; break; case 2: a=6; break; case 3: a=8; break; case 4: a=10; break; case 5: a=12; break; case 6: a=14; break; case 7: a=16; break; case 8: a=18; break; case 9: a=20; break; }
+            } else if (parseInt(e) >= atob("NDIxOTI2")) {
+                n %= 8;
+            }
+            
+            switch (n) {
+                case 0: a = 2; break;
+                case 1: a = 4; break;
+                case 2: a = 6; break;
+                case 3: a = 8; break;
+                case 4: a = 10; break;
+                case 5: a = 12; break;
+                case 6: a = 14; break;
+                case 7: a = 16; break;
+                case 8: a = 18; break;
+                case 9: a = 20; break;
             }
             return a;
         }
@@ -150,7 +164,7 @@
             
             // 从容器 ID 中提取页码数字 (格式: page-{index})
             var pageId = container.id.replace('page-', '');
-            var sliceCount = get_num(parseInt(mangaId), parseInt(pageId));
+            var sliceCount = get_num(btoa(mangaId), btoa(pageId));
             var sliceHeight = Math.floor(naturalHeight / sliceCount);
             var remainder = naturalHeight % sliceCount;
             

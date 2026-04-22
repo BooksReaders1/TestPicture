@@ -203,7 +203,7 @@
                 if (!container) continue;
                 const img = container.querySelector('img');
                 // 如果未加载且未在加载中，则触发加载
-                if (!container.classList.contains('loaded') && img.getAttribute('data-loading') !== 'true') {
+                if (!container.classList.contains('loaded') && img && img.getAttribute('data-loading') !== 'true') {
                     loadPage(i);
                 }
             }

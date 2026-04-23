@@ -1,19 +1,8 @@
 ```
-# Compiled files
-*.pyc
-*.js.map
-*.min.js
-*.bundle.js
-
-# Dependencies
-node_modules/
-__pycache__/
-*.egg-info/
-
 # Logs and temp files
 *.log
 *.tmp
-*.temp
+*.swp
 
 # Environment
 .env
@@ -23,18 +12,33 @@ __pycache__/
 # Editors
 .vscode/
 .idea/
-*.swp
-*.swo
 
-# Build artifacts
+# Dependencies
+node_modules/
+.venv/
+venv/
+__pycache__/
+.mypy_cache/
+.pytest_cache/
 dist/
 build/
 target/
-*.out
+.gradle/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Compiled files
+*.pyc
+*.class
+*.o
 *.exe
 *.dll
 *.so
 *.a
+*.obj
+*.out
 
 # Coverage
 coverage/
@@ -51,4 +55,17 @@ htmlcov/
 *.7z
 *.rar
 *.zst
+*.lz4
+*.lzh
+*.cab
+*.arj
+*.rpm
+*.deb
+*.Z
+*.lz
+*.lzo
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar.zst
 ```

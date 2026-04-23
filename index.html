@@ -110,15 +110,25 @@
         let hasShownEndMessage = false;
         function get_num(e, t) {
             var a = 10;
-            var n = (e = atob(e)) + (t = atob(t));
-            n = md5(n).substr(-1).charCodeAt();
+            // base64解码参数
+            e = window.atob(e);
+            t = window.atob(t);
             
-            if (parseInt(e) >= atob("MjY4ODUw") && parseInt(e) <= atob("NDIxOTI1")) {
+            // 拼接后计算MD5
+            var n = e + t;
+            n = md5(n);
+            n = n.substr(-1); // 取最后一位字符
+            n = n.charCodeAt(); // 转为ASCII码
+            
+            // 根据e的值范围调整n
+            var eInt = parseInt(e);
+            if (eInt >= 268850 && eInt <= 421925) {
                 n %= 10;
-            } else if (parseInt(e) >= atob("NDIxOTI2")) {
+            } else if (eInt >= 421926) {
                 n %= 8;
             }
             
+            // 根据n的值返回切片数量 (2-20之间的偶数)
             switch (n) {
                 case 0: a = 2; break;
                 case 1: a = 4; break;
@@ -131,6 +141,7 @@
                 case 8: a = 18; break;
                 case 9: a = 20; break;
             }
+            
             return a;
         }
         function processImage(imgElement, index) {
@@ -172,38 +183,37 @@
             // 服务器将图片垂直切割成 sliceCount 片，然后倒序排列
             // 例如原图有 5 片 [A(0)][B(1)][C(2)][D(3)][E(4)+remainder]
             // 混淆后变成 [E(4)+remainder][D(3)][C(2)][B(1)][A(0)]
-            // 我们需要从混淆图中读取切片，然后正序绘制回 canvas
             // 
             // 混淆图的布局（从上到下）：
-            //   位置 0: 原图切片 (sliceCount-1) + remainder
-            //   位置 1: 原图切片 (sliceCount-2)
+            //   偏移 0: 原图切片 (sliceCount-1) + remainder  (高度: sliceHeight+remainder)
+            //   偏移 1: 原图切片 (sliceCount-2)              (高度: sliceHeight)
+            //   偏移 2: 原图切片 (sliceCount-3)              (高度: sliceHeight)
             //   ...
-            //   位置 m: 原图切片 (sliceCount-1-m)
+            //   偏移 k: 原图切片 (sliceCount-1-k)            (高度: sliceHeight, k>0)
             //
             // 目标：恢复成原图顺序 [A(0)][B(1)][C(2)][D(3)][E(4)+remainder]
+            // 即：原图第 0 片 -> canvas 顶部, 原图第 1 片 -> 紧接着, ..., 原图最后一片 -> canvas 底部
             
             var destY = 0; // 目标位置的 Y 坐标（从顶部开始，按原图顺序）
-            for (var m = 0; m < sliceCount; m++) {
-                // 我们要绘制原图的第 m 片到 destY 位置
-                // 原图第 m 片在混淆图中的位置是 (sliceCount - 1 - m)
-                var origSliceIndex = m; // 原图片索引
-                var scrambledSliceIndex = sliceCount - 1 - m; // 在混淆图中的切片索引
+            for (var originalSliceIndex = 0; originalSliceIndex < sliceCount; originalSliceIndex++) {
+                // 我们要绘制原图的第 originalSliceIndex 片到 destY 位置
+                // 需要找到这片在混淆图中的位置
+                
+                // 原图第 originalSliceIndex 片在混淆图中的偏移位置是 (sliceCount - 1 - originalSliceIndex)
+                var scrambledOffset = sliceCount - 1 - originalSliceIndex;
                 
                 // 计算混淆图中该切片的 Y 坐标和高度
                 var srcY, currentSliceHeight;
                 
-                // 首先计算混淆图中每个切片的位置
-                // 混淆图第 0 片（最上面）是原图最后一片，带 remainder
-                // 混淆图第 i 片的高度：如果 i===0 则是 sliceHeight+remainder，否则是 sliceHeight
-                if (scrambledSliceIndex === 0) {
-                    // 混淆图的第一片（包含原图最后一片的余数）
+                if (scrambledOffset === 0) {
+                    // 混淆图的第一片（最顶部），包含原图最后一片和余数
                     currentSliceHeight = sliceHeight + remainder;
                     srcY = 0;
                 } else {
-                    // 混淆图的其他片
+                    // 混淆图的其他位置
                     currentSliceHeight = sliceHeight;
-                    // 累加前面所有切片的高度
-                    srcY = (sliceHeight + remainder) + (scrambledSliceIndex - 1) * sliceHeight;
+                    // 累加前面所有切片的高度得到源 Y 坐标
+                    srcY = (sliceHeight + remainder) + (scrambledOffset - 1) * sliceHeight;
                 }
                 
                 // 边界检查
@@ -213,7 +223,7 @@
                 }
                 
                 if (currentSliceHeight <= 0) {
-                    console.warn(`页 ${index}: 切片 ${m} 高度为 0，跳过`);
+                    console.warn(`页 ${index}: 切片 ${originalSliceIndex} 高度为 0，跳过`);
                     continue;
                 }
                 

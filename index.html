@@ -159,3 +159,90 @@
             
             return true;
         }
+
+        function loadPage(pageIndex) {
+            const container = document.getElementById('mangaContainer');
+            const pageWrapper = document.createElement('div');
+            pageWrapper.className = 'manga-page-wrapper';
+            pageWrapper.id = 'page-' + pageIndex;
+            
+            const loadingDiv = document.createElement('div');
+            loadingDiv.className = 'loading';
+            loadingDiv.textContent = '加载中...';
+            pageWrapper.appendChild(loadingDiv);
+            container.appendChild(pageWrapper);
+
+            const img = new Image();
+            img.onload = function() {
+                pageWrapper.classList.add('loaded');
+                loadingDiv.remove();
+                processImage(img, pageIndex);
+                loadedPages++;
+                updatePageInfo();
+            };
+            img.onerror = function() {
+                loadingDiv.remove();
+                pageWrapper.classList.add('error');
+                pageWrapper.textContent = '加载失败，点击重试';
+                pageWrapper.onclick = function() {
+                    pageWrapper.remove();
+                    loadPage(pageIndex);
+                };
+            };
+            
+            // 模拟图片 URL，实际应替换为真实图片地址
+            img.src = 'https://via.placeholder.com/800x1200?text=Page+' + pageIndex;
+        }
+
+        function updatePageInfo() {
+            const pageInfo = document.getElementById('pageInfo');
+            const currentPage = Math.min(loadedPages, totalPages || 1);
+            const total = totalPages || loadedPages || 1;
+            pageInfo.textContent = currentPage + ' / ' + total;
+        }
+
+        function initMangaViewer() {
+            // 从 URL 参数获取 mangaId，如果没有则使用默认值
+            const urlParams = new URLSearchParams(window.location.search);
+            mangaId = urlParams.get('id') || '1';
+            
+            document.getElementById('mangaTitle').textContent = '漫画 ID: ' + mangaId;
+            
+            // 模拟总页数，实际应从服务器获取
+            totalPages = 10;
+            
+            // 开始加载前几页
+            for (let i = 1; i <= Math.min(5, totalPages); i++) {
+                loadPage(i);
+            }
+            
+            // 滚动加载更多
+            window.addEventListener('scroll', function() {
+                if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 1000) {
+                    if (loadedPages < totalPages && !hasShownEndMessage) {
+                        const nextPage = loadedPages + 1;
+                        if (nextPage <= totalPages) {
+                            loadPage(nextPage);
+                        } else {
+                            hasShownEndMessage = true;
+                            showToast('已经到底了');
+                        }
+                    }
+                }
+            });
+        }
+
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('show');
+            setTimeout(function() {
+                toast.classList.remove('show');
+            }, 2000);
+        }
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', initMangaViewer);
+    </script>
+</body>
+</html>

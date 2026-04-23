@@ -114,6 +114,7 @@
         }
 
         function processImage(imgElement, index) {
+            if (!imgElement || !imgElement.parentNode) {
                 console.debug("页 " + index + " 的图片未挂载到 DOM 或已被移除，跳过处理。");
                 return false;
             }
@@ -124,6 +125,7 @@
             var ctx = canvas.getContext("2d");
             var naturalWidth = imgElement.naturalWidth, naturalHeight = imgElement.naturalHeight;
             
+            if (!naturalWidth || !naturalHeight) {
                 console.error("页 " + index + " 的图片尺寸无效：" + naturalWidth + "x" + naturalHeight);
                 return false;
             }
@@ -132,6 +134,7 @@
             canvas.height = naturalHeight;
             var container = imgElement.parentNode;
             
+            if (!container.id || !container.id.startsWith("page-")) {
                 console.debug("页 " + index + " 的图片在处理过程中被移除，跳过处理。");
                 return false;
             }

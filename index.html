@@ -40,14 +40,38 @@
         
         // 使用 jquery.photo-0.6-deobfuscated.js 中的 scramble_image_for_new/onImageLoadedForNew 函数处理图片解混淆
         function processImage(imgElement, index) {
-            // 使用外部库中的 scramble_image_for_new 函数处理图片
-            // 参数：图片元素，最小高度阈值，最大高度阈值，是否强制重新加载，是否强制处理
-            scramble_image_for_new(imgElement, 0, imgElement.naturalHeight, false, false);
+            // 如果图片还未加载完成，需要等待 onload 后再处理
+            if (!imgElement.complete) {
+                return new Promise(function(resolve) {
+                    imgElement.onload = function() {
+                        // 传入 naturalHeight 和 0，确保 parseInt(t) >= parseInt(a)，触发解混淆逻辑
+                        // 这样既使用了真实值，又符合原函数设计：当 t >= a 时才进行解密处理
+                        scramble_image_for_new(imgElement, imgElement.naturalHeight, 0, false, false);
+                        resolve(checkCanvasExists(imgElement));
+                    };
+                    imgElement.onerror = function() {
+                        resolve(false);
+                    };
+                });
+            }
             
-            // 检查是否已处理（canvas 已创建）
+            // 图片已加载完成，同步执行解混淆
+            scramble_image_for_new(imgElement, imgElement.naturalHeight, 0, false, false);
+            return checkCanvasExists(imgElement);
+        }
+        
+        // 检查 canvas 是否已创建
+        function checkCanvasExists(imgElement) {
             var canvas = $(imgElement).next("canvas");
             if (canvas.length > 0) {
                 $(imgElement).addClass("source-image");
+                return true;
+            }
+            // 如果没有 canvas，但图片已被标记为已处理，说明是不需要解混淆的图片（如 GIF）
+            // 这种情况下也应该视为成功，显示原图即可
+            if (imgElement.dataset.scrambleProcessed === "true") {
+                $(imgElement).removeClass("source-image");
+                $(imgElement).show();
                 return true;
             }
             return false;
@@ -125,8 +149,30 @@
                     // 清除 loading 状态（此时 img 已加载完成，但 canvas 还未创建）
                     clearLoadingState(container);
                     
-                    var success = processImage(img, index);
-                    if (success) {
+                    var result = processImage(img, index);
+                    
+                    // 处理 Promise 或直接返回值
+                    if (result && typeof result.then === 'function') {
+                        // Promise 情况
+                        result.then(function(success) {
+                            if (success) {
+                                container.classList.add('loaded');
+                                loadedPages++;
+                                updatePageInfo();
+                            } else {
+                                throw new Error('图片处理返回失败');
+                            }
+                        }).catch(function(e) {
+                            console.error(`处理图片失败 (页 ${index}):`, e);
+                            img.removeAttribute('data-loading');
+                            if (retryCount < maxRetries) setTimeout(() => loadPage(index, retryCount + 1), 1000 * (retryCount + 1));
+                            else showError(container, () => loadPage(index, 0));
+                        });
+                        return; // 提前返回，等待 Promise 结果
+                    }
+                    
+                    // 直接返回值情况
+                    if (result) {
                         container.classList.add('loaded');
                         loadedPages++;
                         updatePageInfo();

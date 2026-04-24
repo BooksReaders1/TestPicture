@@ -22,6 +22,144 @@
         .source-image { display: none; }
         .toast { position: fixed; bottom: 50px; left: 50%; transform: translateX(-50%); background-color: rgba(0,0,0,0.8); color: #fff; padding: 12px 24px; border-radius: 8px; font-size: 14px; z-index: 9999; opacity: 0; transition: opacity 0.3s ease; pointer-events: none; }
         .toast.show { opacity: 1; }
+        
+        /* 悬浮窗样式 */
+        .floating-btn {
+            position: fixed;
+            top: 70px;
+            left: 10px;
+            width: 40px;
+            height: 40px;
+            background-color: #000;
+            border-radius: 8px;
+            cursor: move;
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            user-select: none;
+        }
+        .floating-btn.hidden {
+            display: none;
+        }
+        .hamburger-icon {
+            width: 20px;
+            height: 2px;
+            background-color: #fff;
+            position: relative;
+        }
+        .hamburger-icon::before,
+        .hamburger-icon::after {
+            content: '';
+            position: absolute;
+            width: 20px;
+            height: 2px;
+            background-color: #fff;
+            left: 0;
+        }
+        .hamburger-icon::before {
+            top: -6px;
+        }
+        .hamburger-icon::after {
+            bottom: -6px;
+        }
+        
+        /* 抽屉样式 */
+        .drawer-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0,0,0,0.5);
+            z-index: 10001;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+        .drawer-overlay.show {
+            opacity: 1;
+            visibility: visible;
+        }
+        .drawer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 280px;
+            max-width: 80vw;
+            height: 100vh;
+            background-color: #000;
+            z-index: 10002;
+            transform: translateX(-100%);
+            transition: transform 0.3s ease;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+        .drawer.show {
+            transform: translateX(0);
+        }
+        .drawer-header {
+            color: #fff;
+            font-size: 18px;
+            font-weight: 500;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #333;
+        }
+        .drawer-item {
+            color: #fff;
+            padding: 12px 0;
+            cursor: pointer;
+            border-bottom: 1px solid #333;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+        .drawer-item:hover {
+            background-color: #222;
+            margin: 0 -10px;
+            padding-left: 10px;
+            padding-right: 10px;
+        }
+        .drawer-item:last-child {
+            border-bottom: none;
+        }
+        .drawer-input-container {
+            display: none;
+            margin-top: 10px;
+        }
+        .drawer-input-container.show {
+            display: block;
+        }
+        .drawer-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #333;
+            border-radius: 4px;
+            background-color: #222;
+            color: #fff;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+        .drawer-input:focus {
+            outline: none;
+            border-color: #555;
+        }
+        .drawer-btn {
+            width: 100%;
+            padding: 10px;
+            background-color: #333;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .drawer-btn:hover {
+            background-color: #444;
+        }
+        
         @media (max-width: 768px) { .header { height: 50px; padding: 0 15px; } body { padding-top: 50px; } .header-title { font-size: 14px; } .header-page { font-size: 12px; } .manga-container { max-width: 100%; } }
     </style>
 </head>
@@ -29,8 +167,31 @@
     <div class="header"><div class="header-title" id="mangaTitle">加载中...</div><div class="header-page" id="pageInfo">1 / 1</div></div>
     <div class="manga-container" id="mangaContainer"></div>
     <div id="toast" class="toast"></div>
+    
+    <!-- 悬浮窗 -->
+    <div class="floating-btn" id="floatingBtn">
+        <div class="hamburger-icon"></div>
+    </div>
+    
+    <!-- 抽屉遮罩层 -->
+    <div class="drawer-overlay" id="drawerOverlay"></div>
+    
+    <!-- 抽屉 -->
+    <div class="drawer" id="drawer">
+        <div class="drawer-header">菜单</div>
+        <div class="drawer-item" id="downloadItem">下载漫画到本地 (zip)（实验性功能）</div>
+        <div class="drawer-item" id="hideFloatingBtnItem">隐藏悬浮窗</div>
+        <div class="drawer-item" id="switchMangaItem">切换漫画</div>
+        <div class="drawer-input-container" id="switchMangaInputContainer">
+            <input type="text" class="drawer-input" id="switchMangaInput" placeholder="输入漫画 ID">
+            <button class="drawer-btn" id="confirmSwitchBtn">确认切换</button>
+        </div>
+    </div>
+    
     <!-- 引入成熟的 MD5 库 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-md5/2.19.0/js/md5.min.js"></script>
+    <!-- 引入 JSZip 库用于生成 zip 文件 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script>
 
         let mangaId = "", totalPages = 0, loadedPages = 0;
@@ -321,6 +482,224 @@
                     loadPagesAroundCurrentPage();
                 }, 100);
             });
+            
+            // 初始化悬浮窗和抽屉功能
+            initFloatingWindow();
+        }
+        
+        // 悬浮窗和抽屉相关功能
+        function initFloatingWindow() {
+            const floatingBtn = document.getElementById('floatingBtn');
+            const drawer = document.getElementById('drawer');
+            const drawerOverlay = document.getElementById('drawerOverlay');
+            const downloadItem = document.getElementById('downloadItem');
+            const hideFloatingBtnItem = document.getElementById('hideFloatingBtnItem');
+            const switchMangaItem = document.getElementById('switchMangaItem');
+            const switchMangaInputContainer = document.getElementById('switchMangaInputContainer');
+            const switchMangaInput = document.getElementById('switchMangaInput');
+            const confirmSwitchBtn = document.getElementById('confirmSwitchBtn');
+            
+            let isDragging = false;
+            let startX, startY, initialLeft, initialTop;
+            
+            // 打开抽屉
+            floatingBtn.addEventListener('click', () => {
+                drawer.classList.add('show');
+                drawerOverlay.classList.add('show');
+            });
+            
+            // 关闭抽屉
+            function closeDrawer() {
+                drawer.classList.remove('show');
+                drawerOverlay.classList.remove('show');
+                // 隐藏输入框
+                switchMangaInputContainer.classList.remove('show');
+            }
+            
+            // 点击遮罩层关闭抽屉
+            drawerOverlay.addEventListener('click', closeDrawer);
+            
+            // 拖拽功能
+            floatingBtn.addEventListener('mousedown', (e) => {
+                isDragging = false;
+                startX = e.clientX;
+                startY = e.clientY;
+                const rect = floatingBtn.getBoundingClientRect();
+                initialLeft = rect.left;
+                initialTop = rect.top;
+                
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+            });
+            
+            function onMouseMove(e) {
+                const dx = e.clientX - startX;
+                const dy = e.clientY - startY;
+                
+                // 如果移动距离超过阈值，认为是拖拽
+                if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+                    isDragging = true;
+                }
+                
+                floatingBtn.style.left = `${initialLeft + dx}px`;
+                floatingBtn.style.top = `${initialTop + dy}px`;
+            }
+            
+            function onMouseUp() {
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+                
+                // 如果是拖拽操作，阻止点击事件
+                if (isDragging) {
+                    // 防止触发 click 事件
+                    const clickHandler = (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        floatingBtn.removeEventListener('click', clickHandler);
+                    };
+                    floatingBtn.addEventListener('click', clickHandler, { once: true });
+                }
+            }
+            
+            // 下载漫画功能
+            downloadItem.addEventListener('click', async () => {
+                closeDrawer();
+                await downloadManga();
+            });
+            
+            // 隐藏悬浮窗功能
+            hideFloatingBtnItem.addEventListener('click', () => {
+                closeDrawer();
+                floatingBtn.classList.add('hidden');
+            });
+            
+            // 切换漫画功能 - 显示输入框
+            switchMangaItem.addEventListener('click', () => {
+                switchMangaInputContainer.classList.add('show');
+                switchMangaInput.focus();
+            });
+            
+            // 确认切换漫画
+            confirmSwitchBtn.addEventListener('click', () => {
+                const newId = switchMangaInput.value.trim();
+                if (newId) {
+                    switchManga(newId);
+                    closeDrawer();
+                } else {
+                    showToast('请输入漫画 ID');
+                }
+            });
+            
+            // 回车确认切换
+            switchMangaInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    const newId = switchMangaInput.value.trim();
+                    if (newId) {
+                        switchManga(newId);
+                        closeDrawer();
+                    } else {
+                        showToast('请输入漫画 ID');
+                    }
+                }
+            });
+        }
+        
+        // 下载漫画功能
+        async function downloadManga() {
+            showToast('正在下载漫画，请稍候...');
+            
+            try {
+                const zip = new JSZip();
+                const mangaName = '漫画'; // 占位符，目前无法获取漫画名称
+                const folder = zip.folder(`${mangaName}${mangaId}`);
+                
+                // 收集所有已加载的图片
+                const canvases = document.querySelectorAll('canvas.manga-canvas');
+                
+                if (canvases.length === 0) {
+                    showToast('暂无可下载的图片');
+                    return;
+                }
+                
+                // 按顺序添加图片到 zip
+                for (let i = 0; i < canvases.length; i++) {
+                    const canvas = canvases[i];
+                    const pageNum = i + 1;
+                    const pageIdStr = String(pageNum).padStart(5, '0');
+                    
+                    // 将 canvas 转换为 blob
+                    const blob = await new Promise((resolve, reject) => {
+                        canvas.toBlob((blob) => {
+                            if (blob) {
+                                resolve(blob);
+                            } else {
+                                reject(new Error('无法生成图片'));
+                            }
+                        }, 'image/jpeg', 0.9);
+                    });
+                    
+                    // 添加到 zip
+                    folder.file(`${mangaName}${mangaId}_${pageIdStr}.jpg`, blob);
+                    
+                    // 每下载 10 张图片更新一次提示
+                    if ((i + 1) % 10 === 0) {
+                        showToast(`正在下载漫画，已处理 ${i + 1}/${canvases.length} 张`);
+                    }
+                }
+                
+                // 生成 zip 文件
+                const content = await zip.generateAsync({ type: 'blob' });
+                
+                // 创建下载链接
+                const url = URL.createObjectURL(content);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${mangaName}${mangaId}.zip`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                showToast(`下载完成！共 ${canvases.length} 张图片`);
+            } catch (error) {
+                console.error('下载失败:', error);
+                showToast('下载失败，请重试');
+            }
+        }
+        
+        // 切换漫画功能
+        function switchManga(newId) {
+            // 更新 URL
+            const url = new URL(window.location.href);
+            url.searchParams.set('id', newId);
+            window.history.pushState({}, '', url);
+            
+            // 更新 mangaId
+            mangaId = newId;
+            
+            // 更新标题
+            document.getElementById('mangaTitle').textContent = `漫画 ID: ${mangaId}`;
+            
+            // 清空容器
+            const container = document.getElementById('mangaContainer');
+            container.innerHTML = '';
+            
+            // 重置加载计数
+            loadedPages = 0;
+            hasShownEndMessage = false;
+            
+            // 重新创建页面元素
+            for (let i = 1; i <= MAX_PAGES; i++) {
+                container.appendChild(createPageElement(i));
+            }
+            
+            // 重新开始加载
+            loadPagesConcurrently(1, Math.min(8, MAX_PAGES));
+            
+            showToast(`已切换到漫画 ID: ${newId}`);
+            
+            // 滚动到顶部
+            window.scrollTo(0, 0);
         }
 
         if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

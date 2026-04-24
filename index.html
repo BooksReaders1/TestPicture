@@ -604,6 +604,21 @@
             });
         }
         
+        // 检测是否为 iOS 设备
+        function isIOS() {
+            return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+        }
+        
+        // 检测是否为 Safari 浏览器
+        function isSafari() {
+            return /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+        }
+        
+        // 检测是否为 iOS 非 Safari 浏览器（如 Via）
+        function isIOSNonSafari() {
+            return isIOS() && !isSafari();
+        }
+        
         // 下载漫画功能
         async function downloadManga() {
             showToast('正在下载漫画，请稍候...');
@@ -679,20 +694,49 @@
                 // 生成 zip 文件
                 const content = await zip.generateAsync({ type: 'blob' });
                 
-                // 创建下载链接
+                // 创建下载链接并尝试下载
                 const url = URL.createObjectURL(content);
                 const a = document.createElement('a');
                 a.href = url;
                 a.download = `${mangaName}${mangaId}.zip`;
                 document.body.appendChild(a);
+                
+                // 尝试触发下载
                 a.click();
+                
+                // 检测是否在 iOS 非 Safari 浏览器中下载可能失败
+                if (isIOSNonSafari()) {
+                    // 等待一小段时间检查下载是否成功
+                    setTimeout(() => {
+                        // 如果还在当前页面，说明下载可能失败了
+                        // 提示用户并尝试跳转到 Safari
+                        const confirmSwitch = confirm('下载可能未成功启动。是否跳转到 Safari 浏览器进行下载？');
+                        if (confirmSwitch) {
+                            // 获取当前 URL
+                            const currentUrl = window.location.href;
+                            // 使用 location.href 跳转到 Safari（iOS 会自动用 Safari 打开）
+                            window.location.href = currentUrl;
+                        }
+                    }, 2000);
+                }
+                
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
                 
                 showToast(`下载完成！共 ${downloadedCount} 张图片`);
             } catch (error) {
                 console.error('下载失败:', error);
-                showToast('下载失败，请重试');
+                
+                // 如果是 iOS 非 Safari 浏览器，提示跳转到 Safari
+                if (isIOSNonSafari()) {
+                    const confirmSwitch = confirm('下载失败。是否跳转到 Safari 浏览器进行下载？');
+                    if (confirmSwitch) {
+                        const currentUrl = window.location.href;
+                        window.location.href = currentUrl;
+                    }
+                } else {
+                    showToast('下载失败，请重试');
+                }
             }
         }
         

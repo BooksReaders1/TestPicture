@@ -39,7 +39,7 @@
 
         function getCols(aid, pageNum) {
             const e = String(aid).trim();
-            const t = typeof pageNum === 'number' ? String(pageNum).padStart(5, '0') : String(pageNum).trim();
+            const t = String(pageNum).padStart(5, '0');
             console.log("pageNum:"+ pageNum + "e: " + e + ", t: " + t);
             const hash = md5(e + t);
             const asciiVal = hash.charCodeAt(hash.length - 1);

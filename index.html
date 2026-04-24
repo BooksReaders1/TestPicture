@@ -613,19 +613,42 @@
                 const mangaName = '漫画'; // 占位符，目前无法获取漫画名称
                 const folder = zip.folder(`${mangaName}${mangaId}`);
                 
-                // 收集所有已加载的图片
-                const canvases = document.querySelectorAll('canvas.manga-canvas');
+                let downloadedCount = 0;
+                let skippedCount = 0;
                 
-                if (canvases.length === 0) {
-                    showToast('暂无可下载的图片');
-                    return;
-                }
-                
-                // 按顺序添加图片到 zip
-                for (let i = 0; i < canvases.length; i++) {
-                    const canvas = canvases[i];
-                    const pageNum = i + 1;
+                // 遍历所有可能的页面（最多 MAX_PAGES 页）
+                for (let pageNum = 1; pageNum <= MAX_PAGES; pageNum++) {
                     const pageIdStr = String(pageNum).padStart(5, '0');
+                    const container = document.getElementById(`page-${pageNum}`);
+                    
+                    // 检查是否已经有处理好的 canvas
+                    let canvas = container ? container.querySelector('canvas.manga-canvas') : null;
+                    
+                    if (!canvas) {
+                        // 没有 canvas，需要主动加载并处理图片
+                        showToast(`正在处理第 ${pageNum} 页...`);
+                        
+                        try {
+                            canvas = await loadAndProcessPage(pageNum);
+                            if (!canvas) {
+                                // 图片加载失败，可能是无效页面，停止下载
+                                console.log(`页 ${pageNum}: 图片加载失败，可能是最后一页之后的无效页面，停止下载`);
+                                break;
+                            }
+                        } catch (e) {
+                            console.error(`页 ${pageNum}: 加载处理失败:`, e);
+                            // 连续失败多次则停止
+                            skippedCount++;
+                            if (skippedCount >= 3) {
+                                console.log(`连续 ${skippedCount} 页加载失败，认为已到漫画末尾，停止下载`);
+                                break;
+                            }
+                            continue;
+                        }
+                    }
+                    
+                    // 重置连续失败计数
+                    skippedCount = 0;
                     
                     // 将 canvas 转换为 blob
                     const blob = await new Promise((resolve, reject) => {
@@ -640,11 +663,17 @@
                     
                     // 添加到 zip
                     folder.file(`${mangaName}${mangaId}_${pageIdStr}.jpg`, blob);
+                    downloadedCount++;
                     
                     // 每下载 10 张图片更新一次提示
-                    if ((i + 1) % 10 === 0) {
-                        showToast(`正在下载漫画，已处理 ${i + 1}/${canvases.length} 张`);
+                    if (downloadedCount % 10 === 0) {
+                        showToast(`正在下载漫画，已处理 ${downloadedCount} 张`);
                     }
+                }
+                
+                if (downloadedCount === 0) {
+                    showToast('暂无可下载的图片');
+                    return;
                 }
                 
                 // 生成 zip 文件
@@ -660,11 +689,68 @@
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
                 
-                showToast(`下载完成！共 ${canvases.length} 张图片`);
+                showToast(`下载完成！共 ${downloadedCount} 张图片`);
             } catch (error) {
                 console.error('下载失败:', error);
                 showToast('下载失败，请重试');
             }
+        }
+        
+        // 主动加载并处理单页图片
+        async function loadAndProcessPage(pageNum) {
+            return new Promise((resolve, reject) => {
+                const indexStr = String(pageNum).padStart(5, '0');
+                const cdnDomain = 'https://cdn-msp.jm18c-uoe.cc';
+                const imgUrl = `${cdnDomain}/media/photos/${mangaId}/${indexStr}.webp`;
+                
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                
+                img.onload = function() {
+                    try {
+                        var canvas = document.createElement("canvas");
+                        canvas.className = "manga-canvas";
+                        
+                        var ctx = canvas.getContext("2d", { willReadFrequently: true });
+                        var naturalWidth = img.naturalWidth, naturalHeight = img.naturalHeight;
+                        
+                        if (!naturalWidth || !naturalHeight) {
+                            console.error("页 " + pageNum + " 的图片尺寸无效：" + naturalWidth + "x" + naturalHeight);
+                            reject(new Error('图片尺寸无效'));
+                            return;
+                        }
+                        
+                        canvas.width = naturalWidth;
+                        canvas.height = naturalHeight;
+                        
+                        var sliceCount = getCols(mangaId, pageNum);
+                        var baseH = Math.floor(naturalHeight / sliceCount);
+                        var remainder = naturalHeight % sliceCount;
+                        
+                        // 核心重绘：原图从下往上切片 -> Canvas 从上往下顺序拼接
+                        for (var i = 0; i < sliceCount; i++) {
+                            var srcIdx = sliceCount - 1 - i; // 倒序索引
+                            var srcH = baseH + (srcIdx === 0 ? remainder : 0);
+                            var srcY = srcIdx === 0 ? 0 : baseH * srcIdx + remainder;
+                            var destH = baseH + (i === 0 ? remainder : 0);
+                            var destY = i === 0 ? 0 : baseH * i + remainder;
+                            
+                            ctx.drawImage(img, 0, srcY, naturalWidth, srcH, 0, destY, naturalWidth, destH);
+                        }
+                        
+                        resolve(canvas);
+                    } catch (e) {
+                        reject(e);
+                    }
+                };
+                
+                img.onerror = function(e) {
+                    console.warn(`加载图片失败 (页 ${pageNum}):`, e);
+                    resolve(null); // 返回 null 表示无效页面
+                };
+                
+                img.src = imgUrl;
+            });
         }
         
         // 切换漫画功能

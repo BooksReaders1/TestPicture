@@ -508,11 +508,10 @@
             
             let isDragging = false;
             let startX, startY, initialLeft, initialTop;
+            let hasTriggeredDownload = false; // 标记是否触发过下载
             
-            // 初始化时隐藏 iOS 手动下载容器
-            if (isIOSNonSafari()) {
-                iosDownloadContainer.classList.remove('show');
-            }
+            // 初始化时隐藏手动下载容器
+            iosDownloadContainer.classList.remove('show');
             
             // 打开抽屉
             floatingBtn.addEventListener('click', () => {
@@ -526,17 +525,16 @@
                 drawerOverlay.classList.remove('show');
                 // 隐藏输入框
                 switchMangaInputContainer.classList.remove('show');
-                // 对于 iOS 非 Safari 浏览器，不隐藏手动下载容器（因为用户可能需要多次点击下载）
-                // 但如果是非 iOS 非 Safari 场景，则隐藏
-                if (!isIOSNonSafari()) {
+                // 如果未触发过下载，则隐藏手动下载容器
+                if (!hasTriggeredDownload) {
                     iosDownloadContainer.classList.remove('show');
                 }
             }
             
             // 点击遮罩层关闭抽屉
             drawerOverlay.addEventListener('click', () => {
-                // 对于 iOS 非 Safari 浏览器，如果手动下载容器已显示，则不关闭抽屉（让用户可以多次点击下载）
-                if (isIOSNonSafari() && iosDownloadContainer.classList.contains('show')) {
+                // 如果已触发过下载且手动下载容器已显示，则不关闭抽屉（让用户可以多次点击下载）
+                if (hasTriggeredDownload && iosDownloadContainer.classList.contains('show')) {
                     return;
                 }
                 closeDrawer();
@@ -586,10 +584,6 @@
             
             // 下载漫画功能
             downloadItem.addEventListener('click', async () => {
-                // 对于 iOS 非 Safari 浏览器，不关闭抽屉（因为需要显示手动下载按钮）
-                if (!isIOSNonSafari()) {
-                    closeDrawer();
-                }
                 await downloadManga();
             });
             
@@ -647,21 +641,7 @@
             });
         }
         
-        // 检测是否为 iOS 设备
-        function isIOS() {
-            return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-        }
-        
-        // 检测是否为 Safari 浏览器
-        function isSafari() {
-            return /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-        }
-        
-        // 检测是否为 iOS 非 Safari 浏览器（如 Via）
-        function isIOSNonSafari() {
-            return isIOS() && !isSafari();
-        }
-        
+
         // 下载漫画功能
         async function downloadManga() {
             showToast('正在下载漫画，请稍候...');
@@ -737,51 +717,27 @@
                 // 生成 zip 文件
                 const content = await zip.generateAsync({ type: 'blob' });
                 
-                // 检测是否为 iOS 非 Safari 浏览器
-                if (isIOSNonSafari()) {
-                    // 对于 iOS 非 Safari 浏览器，保存 ZIP blob 和 URL 到全局变量
-                    window.iosZipBlob = content;
-                    window.iosZipUrl = URL.createObjectURL(content);
-                    
-                    // 打开抽屉并显示手动下载按钮
-                    const drawer = document.getElementById('drawer');
-                    const drawerOverlay = document.getElementById('drawerOverlay');
-                    const iosDownloadContainer = document.getElementById('iosDownloadContainer');
-                    
-                    iosDownloadContainer.classList.add('show');
-                    drawer.classList.add('show');
-                    drawerOverlay.classList.add('show');
-                    
-                    showToast('ZIP 已生成，请在侧边栏点击"手动下载 ZIP"按钮下载');
-                } else {
-                    // 其他场景：直接触发下载
-                    const url = URL.createObjectURL(content);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `${mangaName}${mangaId}.zip`;
-                    document.body.appendChild(a);
-                    
-                    // 尝试触发下载
-                    a.click();
-                    
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
-                    
-                    showToast(`下载完成！共 ${downloadedCount} 张图片`);
-                }
+                // 标记已触发过下载
+                hasTriggeredDownload = true;
+                
+                // 保存 ZIP blob 和 URL 到全局变量
+                window.iosZipBlob = content;
+                window.iosZipUrl = URL.createObjectURL(content);
+                
+                // 打开抽屉并显示手动下载按钮
+                const drawer = document.getElementById('drawer');
+                const drawerOverlay = document.getElementById('drawerOverlay');
+                const iosDownloadContainer = document.getElementById('iosDownloadContainer');
+                
+                iosDownloadContainer.classList.add('show');
+                drawer.classList.add('show');
+                drawerOverlay.classList.add('show');
+                
+                showToast('ZIP 已生成，请在侧边栏点击"手动下载 ZIP"按钮下载');
             } catch (error) {
                 console.error('下载失败:', error);
                 
-                // 如果是 iOS 非 Safari 浏览器，提示跳转到 Safari
-                if (isIOSNonSafari()) {
-                    const confirmSwitch = confirm('下载失败。是否跳转到 Safari 浏览器进行下载？');
-                    if (confirmSwitch) {
-                        const currentUrl = window.location.href;
-                        window.location.href = currentUrl;
-                    }
-                } else {
-                    showToast('下载失败，请重试');
-                }
+                showToast('下载失败，请重试');
             }
         }
         
@@ -862,6 +818,21 @@
             // 重置加载计数
             loadedPages = 0;
             hasShownEndMessage = false;
+            
+            // 重置下载标记和清理 ZIP 缓存
+            hasTriggeredDownload = false;
+            if (window.iosZipUrl) {
+                URL.revokeObjectURL(window.iosZipUrl);
+                window.iosZipUrl = null;
+            }
+            if (window.iosZipBlob) {
+                window.iosZipBlob = null;
+            }
+            // 隐藏手动下载容器
+            const iosDownloadContainer = document.getElementById('iosDownloadContainer');
+            if (iosDownloadContainer) {
+                iosDownloadContainer.classList.remove('show');
+            }
             
             // 重新创建页面元素
             for (let i = 1; i <= MAX_PAGES; i++) {

@@ -1,1 +1,330 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>漫画查看</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background-color: #f5f5f5; padding-top: 60px; }
+        .header { position: fixed; top: 0; left: 0; right: 0; height: 60px; background-color: #333; color: #fff; display: flex; align-items: center; justify-content: center; padding: 0 20px; z-index: 1000; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+        .header-title { font-size: 16px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60%; text-align: center; }
+        .header-page { font-size: 14px; color: #aaa; margin-left: 15px; white-space: nowrap; }
+        .manga-container { width: 100%; max-width: 1000px; margin: 0 auto; }
+        .manga-page-wrapper { width: 100%; margin-bottom: 5px; background-color: #e0e0e0; min-height: 200px; }
+        .manga-page-wrapper.loaded { background-color: transparent; }
+        .loading { display: flex; align-items: center; justify-content: center; min-height: 200px; color: #999; font-size: 14px; }
+        .loading::after { content: ""; width: 24px; height: 24px; border: 3px solid #ddd; border-top-color: #666; border-radius: 50%; animation: spin 1s linear infinite; margin-right: 10px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .error { display: flex; align-items: center; justify-content: center; min-height: 200px; color: #e74c3c; font-size: 14px; cursor: pointer; }
+        .error::before { content: "⚠"; margin-right: 8px; font-size: 18px; }
+        canvas.manga-canvas { max-width: 100%; height: auto; display: block; object-fit: contain; }
+        .source-image { display: none; }
+        .toast { position: fixed; bottom: 50px; left: 50%; transform: translateX(-50%); background-color: rgba(0,0,0,0.8); color: #fff; padding: 12px 24px; border-radius: 8px; font-size: 14px; z-index: 9999; opacity: 0; transition: opacity 0.3s ease; pointer-events: none; }
+        .toast.show { opacity: 1; }
+        @media (max-width: 768px) { .header { height: 50px; padding: 0 15px; } body { padding-top: 50px; } .header-title { font-size: 14px; } .header-page { font-size: 12px; } .manga-container { max-width: 100%; } }
+    </style>
+</head>
+<body>
+    <div class="header"><div class="header-title" id="mangaTitle">加载中...</div><div class="header-page" id="pageInfo">1 / 1</div></div>
+    <div class="manga-container" id="mangaContainer"></div>
+    <div id="toast" class="toast"></div>
+    <!-- 引入成熟的 MD5 库 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-md5/2.19.0/js/md5.min.js"></script>
+    <script>
 
+        let mangaId = "", totalPages = 0, loadedPages = 0;
+        const MAX_PAGES = 100, CONCURRENT_LOAD = 8;
+        let hasShownEndMessage = false;
+
+        function getCols(aid, pageNum) {
+            const e = String(aid).trim();
+            const t = String(pageNum).padStart(5, '0');
+            console.log("pageNum:"+ pageNum + "e: " + e + ", t: " + t);
+            const hash = md5(e + t);
+            const asciiVal = hash.charCodeAt(hash.length - 1);
+            const eInt = parseInt(e, 10);
+            
+            let n = asciiVal;
+            if (eInt >= 268850 && eInt <= 421925) n %= 10;
+            else if (eInt >= 421926) n %= 8;
+            else n %= 10;
+            console.log("pageNum: " + pageNum,"result:" + 2 + n * 2);
+            
+            return 2 + n * 2;
+        }
+
+        function processImage(imgElement, index) {
+            if (!imgElement || !imgElement.parentNode) {
+                console.debug("页 " + index + " 的图片未挂载到 DOM 或已被移除，跳过处理。");
+                return false;
+            }
+            
+            var canvas = document.createElement("canvas");
+            canvas.className = "manga-canvas";
+            
+            var ctx = canvas.getContext("2d", { willReadFrequently: true });
+            var naturalWidth = imgElement.naturalWidth, naturalHeight = imgElement.naturalHeight;
+            
+            if (!naturalWidth || !naturalHeight) {
+                console.error("页 " + index + " 的图片尺寸无效：" + naturalWidth + "x" + naturalHeight);
+                return false;
+            }
+            
+            canvas.width = naturalWidth;
+            canvas.height = naturalHeight;
+            var container = imgElement.parentNode;
+            
+            if (!container.id || !container.id.startsWith("page-")) {
+                console.debug("页 " + index + " 的图片在处理过程中被移除，跳过处理。");
+                return false;
+            }
+            
+            var pageId = container.id.replace("page-", "");
+            console.log("pageId: " + pageId　+ ", index: " + index);
+            var sliceCount = getCols(mangaId, pageId);
+            var baseH = Math.floor(naturalHeight / sliceCount);
+            var remainder = naturalHeight % sliceCount;
+            
+            // 核心重绘：原图从下往上切片 -> Canvas 从上往下顺序拼接
+            for (var i = 0; i < sliceCount; i++) {
+                var srcIdx = sliceCount - 1 - i; // 倒序索引
+                var srcH = baseH + (srcIdx === 0 ? remainder : 0);
+                var srcY = srcIdx === 0 ? 0 : baseH * srcIdx + remainder;
+                var destH = baseH + (i === 0 ? remainder : 0);
+                var destY = i === 0 ? 0 : baseH * i + remainder;
+                
+                ctx.drawImage(imgElement, 0, srcY, naturalWidth, srcH, 0, destY, naturalWidth, destH);
+            }
+            
+            imgElement.after(canvas);
+            imgElement.classList.add("source-image");
+            
+            return true;
+        }
+
+        function createPageElement(index) {
+            const container = document.createElement("div");
+            container.id = `page-${index}`; container.className = "manga-page-wrapper";
+            const img = document.createElement("img");
+            img.id = `img-${index}`; img.className = "manga-page source-image"; img.alt = `第 ${index} 页`;
+            img.crossOrigin = "anonymous";
+            // 不在这里设置 src，延迟到 loadPage 时再设置
+            container.appendChild(img);
+            return container;
+        }
+
+        function showLoading(container) {
+            // 只在容器内没有 loading 或 error 元素时才添加
+            if (container.querySelector('.loading') || container.querySelector('.error') || container.querySelector('canvas')) {
+                return;
+            }
+            container.innerHTML = '<div class="loading">加载中</div>';
+        }
+
+        function showError(container, retryCallback) {
+            // 清除容器内的所有内容并显示错误
+            container.innerHTML = '<div class="error">加载失败，点击重试</div>';
+            const errorEl = container.querySelector('.error');
+            if (errorEl && retryCallback) {
+                errorEl.addEventListener('click', retryCallback);
+            }
+        }
+
+        function clearLoadingState(container) {
+            // 清除 loading 状态，保留内容
+            const loadingEl = container.querySelector('.loading');
+            if (loadingEl) {
+                loadingEl.remove();
+            }
+        }
+
+        function showToast(message, duration = 3000) {
+            const toast = document.getElementById('toast');
+            if (!toast) return;
+            toast.textContent = message;
+            toast.classList.add('show');
+            if (window.toastTimeout) clearTimeout(window.toastTimeout);
+            window.toastTimeout = setTimeout(() => {
+                toast.classList.remove('show');
+            }, duration);
+        }
+
+        function loadPage(index, retryCount = 0) {
+            const container = document.getElementById(`page-${index}`);
+            if (!container) return;
+            // 检查页面是否已加载或加载中，避免重复加载
+            const img = container.querySelector('img');
+            if (!img) return;
+            if (container.classList.contains('loaded') || img.getAttribute('data-loading') === 'true') {
+                return;
+            }
+            img.setAttribute('data-loading', 'true');
+            showLoading(container);
+            const maxRetries = 3;
+            
+            // 构建图片 URL（确保没有多余空格）
+            const indexStr = String(index).padStart(5, '0');
+            const cdnDomain = 'https://cdn-msp.jm18c-uoe.cc';
+            const imgUrl = `${cdnDomain}/media/photos/${mangaId}/${indexStr}.webp`;
+            
+            // 确保图片元素已挂载到 DOM
+            if (!img.isConnected) {
+                console.error(`页 ${index} 的图片未挂载到 DOM，重新添加到容器`);
+                container.innerHTML = '';
+                container.appendChild(img);
+            }
+            
+            // 先设置 onload/onerror 再设置 src，确保不会错过事件
+            img.onload = function() {
+                try {
+                    // 清除 loading 状态（此时 img 已加载完成，但 canvas 还未创建）
+                    clearLoadingState(container);
+                    
+                    var success = processImage(img, index);
+                    if (success) {
+                        container.classList.add('loaded');
+                        loadedPages++;
+                        updatePageInfo();
+                    } else {
+                        console.warn(`页 ${index}: 图片处理失败，将重试`);
+                        throw new Error('图片处理返回失败');
+                    }
+                    // 图片加载完成后移除 loading 状态标记
+                    img.removeAttribute('data-loading');
+                } catch (e) {
+                    console.error(`处理图片失败 (页 ${index}):`, e);
+                    // 移除 loading 标记以便重试
+                    img.removeAttribute('data-loading');
+                    if (retryCount < maxRetries) setTimeout(() => loadPage(index, retryCount + 1), 1000 * (retryCount + 1));
+                    else showError(container, () => loadPage(index, 0));
+                }
+            };
+            img.onerror = function(e) {
+                console.warn(`加载图片失败 (页 ${index}), 重试次数：${retryCount}, 错误事件:`, e);
+                // 确保移除 loading 标记
+                img.removeAttribute('data-loading');
+                if (retryCount < maxRetries) setTimeout(() => loadPage(index, retryCount + 1), 1000 * (retryCount + 1));
+                else showError(container, () => loadPage(index, 0));
+            };
+            
+            // 设置 src 开始加载（确保 URL 没有空格）
+            img.src = imgUrl;
+        }
+
+        function updatePageInfo() {
+            const pageInfo = document.getElementById('pageInfo');
+            const visiblePages = getVisiblePages();
+            if (visiblePages.length > 0) {
+                const firstVisible = Math.min(...visiblePages);
+                pageInfo.textContent = `${firstVisible} / ${totalPages || '?'}`;
+            }
+        }
+
+        function getVisiblePages() {
+            const pages = [];
+            const viewportTop = window.scrollY + window.innerHeight / 2;
+            document.querySelectorAll('.manga-page-wrapper').forEach((wrapper, index) => {
+                const rect = wrapper.getBoundingClientRect();
+                const wrapperTop = rect.top + window.scrollY;
+                const wrapperBottom = wrapperTop + rect.height;
+                if (wrapperTop <= viewportTop && wrapperBottom >= viewportTop) pages.push(index + 1);
+            });
+            return pages;
+        }
+
+        function loadPagesAroundCurrentPage() {
+            const visiblePages = getVisiblePages();
+            if (visiblePages.length === 0) return;
+            const currentPage = Math.min(...visiblePages);
+            // 检查当前页下面 8 张图片的加载状态
+            for (let i = currentPage; i < currentPage + 8 && i <= totalPages; i++) {
+                const container = document.getElementById(`page-${i}`);
+                if (!container) continue;
+                const img = container.querySelector('img');
+                // 如果未加载且未在加载中，也没有 canvas（已处理），则触发加载
+                if (!container.classList.contains('loaded') && !container.querySelector('canvas') && img && img.getAttribute('data-loading') !== 'true') {
+                    loadPage(i);
+                }
+            }
+        }
+
+        function loadPagesConcurrently(startIndex, count) {
+            const endIndex = Math.min(startIndex + count, totalPages);
+            const queue = [];
+            for (let i = startIndex; i <= endIndex; i++) queue.push(i);
+            const processQueue = async () => {
+                while (queue.length > 0) {
+                    const batch = queue.splice(0, CONCURRENT_LOAD);
+                    const batchPromises = batch.map(index => new Promise(resolve => {
+                        loadPage(index);
+                        const checkLoaded = setInterval(() => {
+                            const container = document.getElementById(`page-${index}`);
+                            if (container && (container.classList.contains('loaded') || container.querySelector('.error'))) {
+                                clearInterval(checkLoaded);
+                                resolve();
+                            }
+                        }, 100);
+                    }));
+                    await Promise.all(batchPromises);
+                }
+            };
+            processQueue();
+        }
+
+        function init() {
+            const urlParams = new URLSearchParams(window.location.search);
+            mangaId = urlParams.get('id') || urlParams.get('ID') || 'default';
+            
+            // 降级方案：不获取作品名称和总页数，默认最大 100 页
+            document.getElementById('mangaTitle').textContent = `漫画 ID: ${mangaId}`;
+            totalPages = MAX_PAGES;
+            document.getElementById('pageInfo').textContent = `1 / ${totalPages}`;
+            
+            // 创建页面元素
+            const container = document.getElementById('mangaContainer');
+            for (let i = 1; i <= totalPages; i++) {
+                container.appendChild(createPageElement(i));
+            }
+            
+            loadPagesConcurrently(1, Math.min(8, totalPages));
+            
+            let scrollTimeout;
+            let toastTimer = null;
+            window.addEventListener('scroll', () => {
+                updatePageInfo();
+                
+                // Check if user has scrolled to the bottom
+                const scrollTop = window.scrollY || window.pageYOffset;
+                const windowHeight = window.innerHeight;
+                const documentHeight = document.documentElement.scrollHeight;
+                
+                if (scrollTop + windowHeight >= documentHeight - 10) {
+                    // User is at or near the bottom
+                    if (!hasShownEndMessage) {
+                        hasShownEndMessage = true;
+                        showToast('已经到底了');
+                        // 清除之前的定时器（如果有）
+                        if (toastTimer) clearTimeout(toastTimer);
+                        // 3 秒后重置标志，允许再次显示提示
+                        toastTimer = setTimeout(() => {
+                            hasShownEndMessage = false;
+                        }, 3000);
+                    }
+                } else {
+                    // Reset flag if user scrolls up
+                    hasShownEndMessage = false;
+                }
+                
+                clearTimeout(scrollTimeout);
+                scrollTimeout = setTimeout(() => {
+                    loadPagesAroundCurrentPage();
+                }, 100);
+            });
+        }
+
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+        else init();
+    </script>
+</body>
+</html>

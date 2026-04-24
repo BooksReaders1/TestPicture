@@ -38,8 +38,9 @@
         let hasShownEndMessage = false;
 
         function getCols(aid, pageNum) {
-            const e = String(aid);
+            const e = String(aid).trim();
             const t = typeof pageNum === 'number' ? String(pageNum).padStart(5, '0') : String(pageNum).trim();
+            console.log("pageNum:"+ pageNum + "e: " + e + ", t: " + t);
             const hash = md5(e + t);
             const asciiVal = hash.charCodeAt(hash.length - 1);
             const eInt = parseInt(e, 10);
@@ -48,6 +49,7 @@
             if (eInt >= 268850 && eInt <= 421925) n %= 10;
             else if (eInt >= 421926) n %= 8;
             else n %= 10;
+            console.log("pageNum: " + pageNum,"result:" + 2 + n * 2);
             
             return 2 + n * 2;
         }
@@ -79,6 +81,7 @@
             }
             
             var pageId = container.id.replace("page-", "");
+            console.log("pageId: " + pageId　+ ", index: " + index);
             var sliceCount = getCols(mangaId, pageId);
             var baseH = Math.floor(naturalHeight / sliceCount);
             var remainder = naturalHeight % sliceCount;

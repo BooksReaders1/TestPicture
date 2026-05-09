@@ -182,6 +182,11 @@
         <div class="drawer-item" id="downloadItem">下载漫画到本地 (zip)（实验性功能）</div>
         <div class="drawer-item" id="hideFloatingBtnItem">隐藏悬浮窗</div>
         <div class="drawer-item" id="switchMangaItem">切换漫画</div>
+        <!-- iOS 非 Safari 浏览器专用下载按钮容器 -->
+        <div class="drawer-input-container" id="iosDownloadContainer">
+            <div style="color: #fff; font-size: 14px; margin-bottom: 10px;">ZIP 已生成，请点击下方按钮下载</div>
+            <button class="drawer-btn" id="manualDownloadBtn">手动下载 ZIP</button>
+        </div>
         <div class="drawer-input-container" id="switchMangaInputContainer">
             <input type="text" class="drawer-input" id="switchMangaInput" placeholder="输入漫画 ID">
             <button class="drawer-btn" id="confirmSwitchBtn">确认切换</button>
@@ -498,9 +503,15 @@
             const switchMangaInputContainer = document.getElementById('switchMangaInputContainer');
             const switchMangaInput = document.getElementById('switchMangaInput');
             const confirmSwitchBtn = document.getElementById('confirmSwitchBtn');
+            const iosDownloadContainer = document.getElementById('iosDownloadContainer');
+            const manualDownloadBtn = document.getElementById('manualDownloadBtn');
             
             let isDragging = false;
             let startX, startY, initialLeft, initialTop;
+            let hasTriggeredDownload = false; // 标记是否触发过下载
+            
+            // 初始化时隐藏手动下载容器
+            iosDownloadContainer.classList.remove('show');
             
             // 打开抽屉
             floatingBtn.addEventListener('click', () => {
@@ -514,10 +525,20 @@
                 drawerOverlay.classList.remove('show');
                 // 隐藏输入框
                 switchMangaInputContainer.classList.remove('show');
+                // 如果未触发过下载，则隐藏手动下载容器
+                if (!hasTriggeredDownload) {
+                    iosDownloadContainer.classList.remove('show');
+                }
             }
             
             // 点击遮罩层关闭抽屉
-            drawerOverlay.addEventListener('click', closeDrawer);
+            drawerOverlay.addEventListener('click', () => {
+                // 如果已触发过下载且手动下载容器已显示，则不关闭抽屉（让用户可以多次点击下载）
+                if (hasTriggeredDownload && iosDownloadContainer.classList.contains('show')) {
+                    return;
+                }
+                closeDrawer();
+            });
             
             // 拖拽功能
             floatingBtn.addEventListener('mousedown', (e) => {
@@ -563,8 +584,24 @@
             
             // 下载漫画功能
             downloadItem.addEventListener('click', async () => {
-                closeDrawer();
                 await downloadManga();
+            });
+            
+            // iOS 非 Safari 浏览器手动下载按钮点击事件
+            manualDownloadBtn.addEventListener('click', () => {
+                if (window.iosZipBlob && window.iosZipUrl) {
+                    // 触发下载
+                    const a = document.createElement('a');
+                    a.href = window.iosZipUrl;
+                    a.download = `漫画${mangaId}.zip`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    
+                    showToast('下载已触发，请查看浏览器下载提示');
+                } else {
+                    showToast('ZIP 文件尚未生成，请先点击下载菜单');
+                }
             });
             
             // 隐藏悬浮窗功能
@@ -604,6 +641,7 @@
             });
         }
         
+
         // 下载漫画功能
         async function downloadManga() {
             showToast('正在下载漫画，请稍候...');
@@ -613,19 +651,42 @@
                 const mangaName = '漫画'; // 占位符，目前无法获取漫画名称
                 const folder = zip.folder(`${mangaName}${mangaId}`);
                 
-                // 收集所有已加载的图片
-                const canvases = document.querySelectorAll('canvas.manga-canvas');
+                let downloadedCount = 0;
+                let skippedCount = 0;
                 
-                if (canvases.length === 0) {
-                    showToast('暂无可下载的图片');
-                    return;
-                }
-                
-                // 按顺序添加图片到 zip
-                for (let i = 0; i < canvases.length; i++) {
-                    const canvas = canvases[i];
-                    const pageNum = i + 1;
+                // 遍历所有可能的页面（最多 MAX_PAGES 页）
+                for (let pageNum = 1; pageNum <= MAX_PAGES; pageNum++) {
                     const pageIdStr = String(pageNum).padStart(5, '0');
+                    const container = document.getElementById(`page-${pageNum}`);
+                    
+                    // 检查是否已经有处理好的 canvas
+                    let canvas = container ? container.querySelector('canvas.manga-canvas') : null;
+                    
+                    if (!canvas) {
+                        // 没有 canvas，需要主动加载并处理图片
+                        showToast(`正在处理第 ${pageNum} 页...`);
+                        
+                        try {
+                            canvas = await loadAndProcessPage(pageNum);
+                            if (!canvas) {
+                                // 图片加载失败，可能是无效页面，停止下载
+                                console.log(`页 ${pageNum}: 图片加载失败，可能是最后一页之后的无效页面，停止下载`);
+                                break;
+                            }
+                        } catch (e) {
+                            console.error(`页 ${pageNum}: 加载处理失败:`, e);
+                            // 连续失败多次则停止
+                            skippedCount++;
+                            if (skippedCount >= 3) {
+                                console.log(`连续 ${skippedCount} 页加载失败，认为已到漫画末尾，停止下载`);
+                                break;
+                            }
+                            continue;
+                        }
+                    }
+                    
+                    // 重置连续失败计数
+                    skippedCount = 0;
                     
                     // 将 canvas 转换为 blob
                     const blob = await new Promise((resolve, reject) => {
@@ -640,31 +701,101 @@
                     
                     // 添加到 zip
                     folder.file(`${mangaName}${mangaId}_${pageIdStr}.jpg`, blob);
+                    downloadedCount++;
                     
                     // 每下载 10 张图片更新一次提示
-                    if ((i + 1) % 10 === 0) {
-                        showToast(`正在下载漫画，已处理 ${i + 1}/${canvases.length} 张`);
+                    if (downloadedCount % 10 === 0) {
+                        showToast(`正在下载漫画，已处理 ${downloadedCount} 张`);
                     }
+                }
+                
+                if (downloadedCount === 0) {
+                    showToast('暂无可下载的图片');
+                    return;
                 }
                 
                 // 生成 zip 文件
                 const content = await zip.generateAsync({ type: 'blob' });
                 
-                // 创建下载链接
-                const url = URL.createObjectURL(content);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `${mangaName}${mangaId}.zip`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
+                // 标记已触发过下载
+                hasTriggeredDownload = true;
                 
-                showToast(`下载完成！共 ${canvases.length} 张图片`);
+                // 保存 ZIP blob 和 URL 到全局变量
+                window.iosZipBlob = content;
+                window.iosZipUrl = URL.createObjectURL(content);
+                
+                // 打开抽屉并显示手动下载按钮
+                const drawer = document.getElementById('drawer');
+                const drawerOverlay = document.getElementById('drawerOverlay');
+                const iosDownloadContainer = document.getElementById('iosDownloadContainer');
+                
+                iosDownloadContainer.classList.add('show');
+                drawer.classList.add('show');
+                drawerOverlay.classList.add('show');
+                
+                showToast('ZIP 已生成，请在侧边栏点击"手动下载 ZIP"按钮下载');
             } catch (error) {
                 console.error('下载失败:', error);
+                
                 showToast('下载失败，请重试');
             }
+        }
+        
+        // 主动加载并处理单页图片
+        async function loadAndProcessPage(pageNum) {
+            return new Promise((resolve, reject) => {
+                const indexStr = String(pageNum).padStart(5, '0');
+                const cdnDomain = 'https://cdn-msp.jm18c-uoe.cc';
+                const imgUrl = `${cdnDomain}/media/photos/${mangaId}/${indexStr}.webp`;
+                
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                
+                img.onload = function() {
+                    try {
+                        var canvas = document.createElement("canvas");
+                        canvas.className = "manga-canvas";
+                        
+                        var ctx = canvas.getContext("2d", { willReadFrequently: true });
+                        var naturalWidth = img.naturalWidth, naturalHeight = img.naturalHeight;
+                        
+                        if (!naturalWidth || !naturalHeight) {
+                            console.error("页 " + pageNum + " 的图片尺寸无效：" + naturalWidth + "x" + naturalHeight);
+                            reject(new Error('图片尺寸无效'));
+                            return;
+                        }
+                        
+                        canvas.width = naturalWidth;
+                        canvas.height = naturalHeight;
+                        
+                        var sliceCount = getCols(mangaId, pageNum);
+                        var baseH = Math.floor(naturalHeight / sliceCount);
+                        var remainder = naturalHeight % sliceCount;
+                        
+                        // 核心重绘：原图从下往上切片 -> Canvas 从上往下顺序拼接
+                        for (var i = 0; i < sliceCount; i++) {
+                            var srcIdx = sliceCount - 1 - i; // 倒序索引
+                            var srcH = baseH + (srcIdx === 0 ? remainder : 0);
+                            var srcY = srcIdx === 0 ? 0 : baseH * srcIdx + remainder;
+                            var destH = baseH + (i === 0 ? remainder : 0);
+                            var destY = i === 0 ? 0 : baseH * i + remainder;
+                            
+                            ctx.drawImage(img, 0, srcY, naturalWidth, srcH, 0, destY, naturalWidth, destH);
+                        }
+                        
+                        resolve(canvas);
+                    } catch (e) {
+                        reject(e);
+                    }
+                };
+                
+                img.onerror = function(e) {
+                    console.warn(`加载图片失败 (页 ${pageNum}):`, e);
+                    resolve(null); // 返回 null 表示无效页面
+                };
+                
+                img.src = imgUrl;
+            });
         }
         
         // 切换漫画功能
@@ -687,6 +818,21 @@
             // 重置加载计数
             loadedPages = 0;
             hasShownEndMessage = false;
+            
+            // 重置下载标记和清理 ZIP 缓存
+            hasTriggeredDownload = false;
+            if (window.iosZipUrl) {
+                URL.revokeObjectURL(window.iosZipUrl);
+                window.iosZipUrl = null;
+            }
+            if (window.iosZipBlob) {
+                window.iosZipBlob = null;
+            }
+            // 隐藏手动下载容器
+            const iosDownloadContainer = document.getElementById('iosDownloadContainer');
+            if (iosDownloadContainer) {
+                iosDownloadContainer.classList.remove('show');
+            }
             
             // 重新创建页面元素
             for (let i = 1; i <= MAX_PAGES; i++) {

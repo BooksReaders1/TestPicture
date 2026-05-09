@@ -289,10 +289,24 @@
         }
 
         function showError(container, retryCallback) {
-            // 清除容器内的所有内容并显示错误
-            container.innerHTML = '<div class="error">加载失败，点击重试</div>';
-            const errorEl = container.querySelector('.error');
-            if (errorEl && retryCallback) {
+            // 只显示错误提示，不删除 img 元素，以便重试时可以复用
+            // 先移除 loading 状态
+            const loadingEl = container.querySelector('.loading');
+            if (loadingEl) {
+                loadingEl.remove();
+            }
+            
+            // 如果已经有 error 元素，不要重复添加
+            if (container.querySelector('.error')) {
+                return;
+            }
+            
+            const errorEl = document.createElement('div');
+            errorEl.className = 'error';
+            errorEl.textContent = '加载失败，点击重试';
+            container.appendChild(errorEl);
+            
+            if (retryCallback) {
                 errorEl.addEventListener('click', retryCallback);
             }
         }
@@ -319,10 +333,27 @@
         function loadPage(index, retryCount = 0) {
             const container = document.getElementById(`page-${index}`);
             if (!container) return;
+            
+            // 重试时，移除之前的错误提示和已处理的 canvas，恢复初始状态
+            if (retryCount === 0) {
+                const errorEl = container.querySelector('.error');
+                if (errorEl) {
+                    errorEl.remove();
+                }
+                const canvasEl = container.querySelector('canvas');
+                if (canvasEl) {
+                    canvasEl.remove();
+                }
+                const processedImg = container.querySelector('.source-image');
+                if (processedImg) {
+                    processedImg.classList.remove('source-image');
+                }
+            }
+            
             // 检查页面是否已加载或加载中，避免重复加载
             const img = container.querySelector('img');
             if (!img) return;
-            if (container.classList.contains('loaded') || img.getAttribute('data-loading') === 'true') {
+            if (container.classList.contains('loaded') && retryCount === 0) {
                 return;
             }
             img.setAttribute('data-loading', 'true');

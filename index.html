@@ -390,6 +390,8 @@
                         loadedPages++;
                         resetFailureCounter(index); // 重置连续失败计数器，并更新最后成功页码
                         updatePageInfo();
+                        // 图片加载完成后触发继续加载
+                        loadPagesAroundCurrentPage();
                     } else {
                         console.warn(`页 ${index}: 图片处理失败，将重试`);
                         throw new Error('图片处理返回失败');
@@ -465,32 +467,46 @@
 
         function loadPagesAroundCurrentPage() {
             const visiblePages = getVisiblePages();
-            if (visiblePages.length === 0 || !isDetectingEnd) return;
+            if (visiblePages.length === 0) return;
             const currentPage = Math.min(...visiblePages);
             
             // 动态探测机制：只加载顺序的下一页，用于探测是否还有更多图片
             // 只有当最后成功页码 + 1 还未加载时，才加载它
             const nextPageToProbe = lastSuccessfulPage + 1;
+            let probePageIsLoadingOrLoaded = false;
+            
             if (nextPageToProbe <= totalPages) {
                 const container = document.getElementById(`page-${nextPageToProbe}`);
                 if (container) {
                     const img = container.querySelector('img');
-                    // 如果未加载且未在加载中，也没有 canvas（已处理），则触发加载
-                    if (!container.classList.contains('loaded') && !container.querySelector('canvas') && img && img.getAttribute('data-loading') !== 'true') {
+                    // 检查探测页是否已经在加载中或已处理
+                    if (container.classList.contains('loaded') || container.querySelector('canvas') || (img && img.getAttribute('data-loading') === 'true')) {
+                        probePageIsLoadingOrLoaded = true;
+                    } else {
+                        // 探测页还未加载，触发加载
                         loadPage(nextPageToProbe);
+                        return; // 先加载探测页，等待结果
                     }
                 }
             }
             
-            // 同时，为了用户体验，也加载当前可见区域附近的页面（但不计入连续失败探测）
-            // 这些页面的失败不会影响探测结果
-            for (let i = currentPage; i < currentPage + 8 && i <= totalPages; i++) {
-                if (i === nextPageToProbe) continue; // 跳过已经处理的探测页
-                const container = document.getElementById(`page-${i}`);
-                if (!container) continue;
-                const img = container.querySelector('img');
-                if (!container.classList.contains('loaded') && !container.querySelector('canvas') && img && img.getAttribute('data-loading') !== 'true') {
-                    loadPage(i);
+            // 如果探测页已经在加载中或已加载完成，说明当前页附近的图片已经加载完成
+            // 开始向下依次继续加载剩余所有图片
+            if (probePageIsLoadingOrLoaded) {
+                let nextUnloadedPage = lastSuccessfulPage + 1;
+                while (nextUnloadedPage <= totalPages) {
+                    const container = document.getElementById(`page-${nextUnloadedPage}`);
+                    if (!container) break;
+                    const img = container.querySelector('img');
+                    // 跳过已加载、加载中或已处理的页面
+                    if (!container.classList.contains('loaded') && !container.querySelector('canvas') && img && img.getAttribute('data-loading') !== 'true') {
+                        loadPage(nextUnloadedPage);
+                        // 并发加载，每次最多 CONCURRENT_LOAD 个
+                        if ((nextUnloadedPage - lastSuccessfulPage) % CONCURRENT_LOAD === 0) {
+                            break; // 等待下一批
+                        }
+                    }
+                    nextUnloadedPage++;
                 }
             }
         }

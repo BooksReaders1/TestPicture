@@ -202,6 +202,11 @@
         let mangaId = "", totalPages = 0, loadedPages = 0;
         const MAX_PAGES = 100, CONCURRENT_LOAD = 8;
         let hasShownEndMessage = false;
+        
+        // 动态探测机制：连续失败计数器和实际页数标记
+        let consecutiveFailures = 0;
+        let actualTotalPages = null; // 探测到的实际总页数
+        let isDetectingEnd = true; // 是否正在探测结束位置
 
         function getCols(aid, pageNum) {
             const e = String(aid).trim();
@@ -382,6 +387,7 @@
                     if (success) {
                         container.classList.add('loaded');
                         loadedPages++;
+                        resetFailureCounter(); // 重置连续失败计数器
                         updatePageInfo();
                     } else {
                         console.warn(`页 ${index}: 图片处理失败，将重试`);
@@ -401,6 +407,26 @@
                 console.warn(`加载图片失败 (页 ${index}), 重试次数：${retryCount}, 错误事件:`, e);
                 // 确保移除 loading 标记
                 img.removeAttribute('data-loading');
+                
+                // 动态探测机制：记录连续失败
+                if (isDetectingEnd && retryCount >= maxRetries) {
+                    consecutiveFailures++;
+                    console.log(`连续失败次数：${consecutiveFailures}`);
+                    
+                    // 如果连续 3 次失败，认为已经获取到全部图片
+                    if (consecutiveFailures >= 3 && actualTotalPages === null) {
+                        actualTotalPages = index - 1; // 上一页是最后一页有效图片
+                        totalPages = actualTotalPages;
+                        isDetectingEnd = false;
+                        console.log(`探测完成：实际总页数为 ${actualTotalPages}`);
+                        updatePageInfo();
+                        showToast(`漫画共 ${actualTotalPages} 页`);
+                        
+                        // 移除后续不存在的页面元素
+                        removeNonExistentPages(actualTotalPages);
+                    }
+                }
+                
                 if (retryCount < maxRetries) setTimeout(() => loadPage(index, retryCount + 1), 1000 * (retryCount + 1));
                 else showError(container, () => loadPage(index, 0));
             };
@@ -432,7 +458,7 @@
 
         function loadPagesAroundCurrentPage() {
             const visiblePages = getVisiblePages();
-            if (visiblePages.length === 0) return;
+            if (visiblePages.length === 0 || !isDetectingEnd) return;
             const currentPage = Math.min(...visiblePages);
             // 检查当前页下面 8 张图片的加载状态
             for (let i = currentPage; i < currentPage + 8 && i <= totalPages; i++) {
@@ -451,7 +477,7 @@
             const queue = [];
             for (let i = startIndex; i <= endIndex; i++) queue.push(i);
             const processQueue = async () => {
-                while (queue.length > 0) {
+                while (queue.length > 0 && isDetectingEnd) {
                     const batch = queue.splice(0, CONCURRENT_LOAD);
                     const batchPromises = batch.map(index => new Promise(resolve => {
                         loadPage(index);
@@ -467,6 +493,24 @@
                 }
             };
             processQueue();
+        }
+
+        // 移除不存在的页面元素
+        function removeNonExistentPages(actualPages) {
+            const container = document.getElementById('mangaContainer');
+            for (let i = actualPages + 1; i <= MAX_PAGES; i++) {
+                const pageEl = document.getElementById(`page-${i}`);
+                if (pageEl) {
+                    pageEl.remove();
+                }
+            }
+        }
+
+        // 在图片加载成功时重置连续失败计数器
+        function resetFailureCounter() {
+            if (isDetectingEnd) {
+                consecutiveFailures = 0;
+            }
         }
 
         function init() {
@@ -864,6 +908,11 @@
             if (iosDownloadContainer) {
                 iosDownloadContainer.classList.remove('show');
             }
+            
+            // 重置动态探测机制的状态
+            consecutiveFailures = 0;
+            actualTotalPages = null;
+            isDetectingEnd = true;
             
             // 重新创建页面元素
             for (let i = 1; i <= MAX_PAGES; i++) {

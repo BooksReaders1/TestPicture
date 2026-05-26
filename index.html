@@ -207,6 +207,7 @@
         let consecutiveFailures = 0;
         let actualTotalPages = null; // 探测到的实际总页数
         let isDetectingEnd = true; // 是否正在探测结束位置
+        let lastSuccessfulPage = 0; // 最后成功加载的页码，用于顺序探测
 
         function getCols(aid, pageNum) {
             const e = String(aid).trim();
@@ -387,7 +388,7 @@
                     if (success) {
                         container.classList.add('loaded');
                         loadedPages++;
-                        resetFailureCounter(); // 重置连续失败计数器
+                        resetFailureCounter(index); // 重置连续失败计数器，并更新最后成功页码
                         updatePageInfo();
                     } else {
                         console.warn(`页 ${index}: 图片处理失败，将重试`);
@@ -408,22 +409,28 @@
                 // 确保移除 loading 标记
                 img.removeAttribute('data-loading');
                 
-                // 动态探测机制：记录连续失败
+                // 动态探测机制：记录连续失败（只在顺序探测时有效）
                 if (isDetectingEnd && retryCount >= maxRetries) {
-                    consecutiveFailures++;
-                    console.log(`连续失败次数：${consecutiveFailures}`);
-                    
-                    // 如果连续 3 次失败，认为已经获取到全部图片
-                    if (consecutiveFailures >= 3 && actualTotalPages === null) {
-                        actualTotalPages = index - 1; // 上一页是最后一页有效图片
-                        totalPages = actualTotalPages;
-                        isDetectingEnd = false;
-                        console.log(`探测完成：实际总页数为 ${actualTotalPages}`);
-                        updatePageInfo();
-                        showToast(`漫画共 ${actualTotalPages} 页`);
+                    // 只有当失败的页码是紧接着最后成功页码的下一页时，才计入连续失败
+                    // 这样可以避免向下滚动时，远处页面的失败被错误计数
+                    if (index === lastSuccessfulPage + consecutiveFailures + 1) {
+                        consecutiveFailures++;
+                        console.log(`页 ${index} 加载失败，连续失败次数：${consecutiveFailures}，最后成功页码：${lastSuccessfulPage}`);
                         
-                        // 移除后续不存在的页面元素
-                        removeNonExistentPages(actualTotalPages);
+                        // 如果连续 3 次失败，认为已经获取到全部图片
+                        if (consecutiveFailures >= 3 && actualTotalPages === null) {
+                            actualTotalPages = lastSuccessfulPage; // 最后成功加载的页是最后一页
+                            totalPages = actualTotalPages;
+                            isDetectingEnd = false;
+                            console.log(`探测完成：实际总页数为 ${actualTotalPages}`);
+                            updatePageInfo();
+                            showToast(`漫画共 ${actualTotalPages} 页`);
+                            
+                            // 移除后续不存在的页面元素
+                            removeNonExistentPages(actualTotalPages);
+                        }
+                    } else {
+                        console.log(`页 ${index} 不是顺序探测的目标页（期望页码：${lastSuccessfulPage + consecutiveFailures + 1}），不计入连续失败`);
                     }
                 }
                 
@@ -460,12 +467,28 @@
             const visiblePages = getVisiblePages();
             if (visiblePages.length === 0 || !isDetectingEnd) return;
             const currentPage = Math.min(...visiblePages);
-            // 检查当前页下面 8 张图片的加载状态
+            
+            // 动态探测机制：只加载顺序的下一页，用于探测是否还有更多图片
+            // 只有当最后成功页码 + 1 还未加载时，才加载它
+            const nextPageToProbe = lastSuccessfulPage + 1;
+            if (nextPageToProbe <= totalPages) {
+                const container = document.getElementById(`page-${nextPageToProbe}`);
+                if (container) {
+                    const img = container.querySelector('img');
+                    // 如果未加载且未在加载中，也没有 canvas（已处理），则触发加载
+                    if (!container.classList.contains('loaded') && !container.querySelector('canvas') && img && img.getAttribute('data-loading') !== 'true') {
+                        loadPage(nextPageToProbe);
+                    }
+                }
+            }
+            
+            // 同时，为了用户体验，也加载当前可见区域附近的页面（但不计入连续失败探测）
+            // 这些页面的失败不会影响探测结果
             for (let i = currentPage; i < currentPage + 8 && i <= totalPages; i++) {
+                if (i === nextPageToProbe) continue; // 跳过已经处理的探测页
                 const container = document.getElementById(`page-${i}`);
                 if (!container) continue;
                 const img = container.querySelector('img');
-                // 如果未加载且未在加载中，也没有 canvas（已处理），则触发加载
                 if (!container.classList.contains('loaded') && !container.querySelector('canvas') && img && img.getAttribute('data-loading') !== 'true') {
                     loadPage(i);
                 }
@@ -476,6 +499,10 @@
             const endIndex = Math.min(startIndex + count, totalPages);
             const queue = [];
             for (let i = startIndex; i <= endIndex; i++) queue.push(i);
+            
+            // 初始化时，lastSuccessfulPage 为 0，所以顺序加载的前几页会按顺序计入探测
+            // 当有页面成功加载后，lastSuccessfulPage 会被更新
+            
             const processQueue = async () => {
                 while (queue.length > 0 && isDetectingEnd) {
                     const batch = queue.splice(0, CONCURRENT_LOAD);
@@ -507,9 +534,14 @@
         }
 
         // 在图片加载成功时重置连续失败计数器
-        function resetFailureCounter() {
+        function resetFailureCounter(successfulPageIndex) {
             if (isDetectingEnd) {
                 consecutiveFailures = 0;
+                // 更新最后成功加载的页码（只增不减）
+                if (successfulPageIndex > lastSuccessfulPage) {
+                    lastSuccessfulPage = successfulPageIndex;
+                }
+                console.log(`页 ${successfulPageIndex} 加载成功，连续失败计数重置为 0，最后成功页码：${lastSuccessfulPage}`);
             }
         }
 
@@ -913,6 +945,7 @@
             consecutiveFailures = 0;
             actualTotalPages = null;
             isDetectingEnd = true;
+            lastSuccessfulPage = 0;
             
             // 重新创建页面元素
             for (let i = 1; i <= MAX_PAGES; i++) {
